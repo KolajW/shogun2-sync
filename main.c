@@ -1,5 +1,4 @@
-#include <stdio.h>
-
+#include "kw_sha1.h"
 
 
 char* test_hash_c(char path[]){
@@ -34,6 +33,7 @@ int main(){
     }*/
 
     printf("Hello World!\n");
+    sha1();
     return 0;
 }
 
