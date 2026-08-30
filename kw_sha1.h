@@ -6,9 +6,9 @@
 #include <string.h>
 #include <stdlib.h>
 
-void sha1();
+void sha1(const uint8_t *message, size_t ML, uint32_t result[5]);
 
-uint32_t leftRotate(uint32_t x, size_t offset);
+//uint32_t leftRotate(uint32_t x, size_t offset);
 
 //Chunk rep
 typedef struct {
@@ -16,5 +16,7 @@ typedef struct {
 } package;
 
 void printS(uint32_t result[]);
+
+void resultToChar(uint32_t result[], char* resultChar, size_t ML);
 
 #endif 
