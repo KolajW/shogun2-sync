@@ -1,19 +1,16 @@
 #include "kw_sha1.h"
 
-void sha1(){
+#define leftRotate(x, offset) (((x) << (offset)) | ((x) >> (32 - (offset))))
+
+void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
     uint32_t H0 = 0x67452301;
     uint32_t H1 = 0xEFCDAB89;
     uint32_t H2 = 0x98BADCFE;
     uint32_t H3 = 0x10325476;
     uint32_t H4 = 0xC3D2E1F0;
-    
-    uint8_t message[] = {'a', 'b', 'c'};
-
-    //Length of message ARRAY size
-    size_t ML = sizeof(message);
 
     //Counting size in BITS
-    uint64_t bits = ML *  8;
+    uint64_t bits = (uint64_t)ML * 8;
 
     size_t diff = (ML + 1) % 64;
     if(diff<=56){
@@ -108,8 +105,12 @@ void sha1(){
         
     }
 
-    uint32_t wynik[5] = {H0, H1, H2, H3, H4};
-    printS(wynik);
+    result[0] = H0;
+    result[1] = H1;
+    result[2] = H2;
+    result[3] = H3;
+    result[4] = H4;
+
     //free(packages);
     free(input);
 }
@@ -123,6 +124,13 @@ void printS(uint32_t result[]){
     
 }
 
-uint32_t leftRotate(uint32_t x, size_t offset){
-    return ((x<<offset) | (x>>(32-offset)));
+void resultToChar(uint32_t result[], char* resultChar, size_t ML){
+    int offset = 0;
+    for (size_t i = 0; i < 5; i++) {
+        offset += snprintf(resultChar + offset, ML - offset, "%08x", result[i]);
+    }
 }
+
+/*uint32_t leftRotate(uint32_t x, size_t offset){
+    return ((x<<offset) | (x>>(32-offset)));
+}*/

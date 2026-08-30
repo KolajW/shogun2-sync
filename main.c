@@ -1,39 +1,41 @@
-#include "kw_sha1.h"
-
-
-char* test_hash_c(char path[]){
-    FILE *save;
-    save = fopen(path, "rb");
-    if (save == NULL)
-    {
-        printf("Blad pliku\n");
-        return NULL;
-    }
-
-    fclose(save);
-
-    return 0;
-}
-
-
+#include "kw_compress.h"
 
 int main(){
-    
-    
-    
-    /*char *buf = test_hash_c("C:/Users/szynk/AppData/Roaming/The Creative Assembly/Shogun2/save_games_multiplayer/autosave.save_multiplayer");
-    if(buf != NULL){
-        SHA1_CTX sha; uint8_t results[20]; int n;
+    //Open file
+    FILE *save = fopen("C:\\Users\\szynk\\AppData\\Roaming\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\autosave.save_multiplayer","rb");
+    //Possible error
+    if (save == NULL) {
+        printf("Error 001 SAVE NOT FOUND\n");
+        return 1;
+    }
 
-        n = strlen(buf); SHA1Init(&sha); SHA1Update(&sha, (uint8_t *)buf, n); SHA1Final(results, &sha);
-        printf("0x"); for (n = 0; n < 20; n++)
+    //Save size
+    fseek(save, 0L, SEEK_END);
+    size_t ML = ftell(save);
+    rewind(save);
 
-        printf("%02x", results[n]);
-        putchar('n');
-    }*/
+    //Save File into RAM
+    uint8_t *buff = malloc(ML);
+    fread(buff,1,ML,save);
+    //Array for SHA1
+    uint32_t result[5];
+    sha1(buff,ML,result);
 
-    printf("Hello World!\n");
-    sha1();
+    //Closing file
+    fclose(save);
+
+    printS(result);
+    char filename[41];
+    resultToChar(result, filename, sizeof(filename));
+    char fullPath[256]; 
+    
+    snprintf(fullPath, sizeof(fullPath), "%s.z", filename);
+
+    kw_compress(buff,ML,fullPath);
+
+    //Free the RAM!
+    free(buff);
+
     return 0;
 }
 

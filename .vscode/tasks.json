@@ -8,6 +8,7 @@
                 "-fdiagnostics-color=always",
                 "-g",
                 "${workspaceFolder}\\*.c",
+                "${workspaceFolder}/zlib/*.c",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe"
             ],
