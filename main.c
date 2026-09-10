@@ -1,40 +1,35 @@
-#include "kw_compress.h"
+#include "kw_conf.h"
+#define VERSION "0.0.1"
+#define AUTHOR "KW"
 
-int main(){
-    //Open file
-    FILE *save = fopen("C:\\Users\\szynk\\AppData\\Roaming\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\autosave.save_multiplayer","rb");
-    //Possible error
-    if (save == NULL) {
-        printf("Error 001 SAVE NOT FOUND\n");
+int main(int argc, char *argv[]){
+    //Info
+    if( argc < 2){
+        printf("Failed: No arguments\n");
+        printf("Use: shogun-sync [args]\n");
+        printf("Type: 'shogun-sync --help' for more informations\n");
         return 1;
     }
-
-    //Save size
-    fseek(save, 0L, SEEK_END);
-    size_t ML = ftell(save);
-    rewind(save);
-
-    //Save File into RAM
-    uint8_t *buff = malloc(ML);
-    fread(buff,1,ML,save);
-    //Array for SHA1
-    uint32_t result[5];
-    sha1(buff,ML,result);
-
-    //Closing file
-    fclose(save);
-
-    printS(result);
-    char filename[41];
-    resultToChar(result, filename, sizeof(filename));
-    char fullPath[256]; 
+    //Version
+    if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)
+    {
+        printf("Shogun Sync version: %s\n", VERSION);
+        printf("Author: %s\n", AUTHOR);
+        return 0;
+    }
+    //TEST
+    if (strcmp(argv[1], "--test") == 0 || strcmp(argv[1], "-t") == 0)
+    {
+        printf("Finding and compressing save:\n");
+        if(argc > 2){
+            test(argv[2]);
+        }
+        else{
+            test("autosave");
+        }
+        return 0;
+    }
     
-    snprintf(fullPath, sizeof(fullPath), "%s.z", filename);
-
-    kw_compress(buff,ML,fullPath);
-
-    //Free the RAM!
-    free(buff);
 
     return 0;
 }
