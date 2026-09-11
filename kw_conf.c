@@ -52,3 +52,80 @@ void test(char saveName[]){
     //Free the RAM!
     free(buff);
 }
+
+bool init() {
+    char syncPath[512]; 
+    char objPath[512]; 
+    char refPath[512];
+    char *appdata = getenv("APPDATA");
+    
+    if (appdata == NULL) {
+        printf("Error 005 APPDATA PATH NOT FOUND\n");
+        return 1;
+    }
+
+    snprintf(syncPath, sizeof(syncPath), "%s\\The Creative Assembly\\Shogun2\\.sync", appdata);
+    snprintf(objPath, sizeof(objPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects", appdata);
+    snprintf(refPath, sizeof(refPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\refs", appdata);
+
+    struct stat st = {0};
+    if (stat(syncPath, &st) == 0) {
+        printf("DIRECTORY ALREADY EXISTS\n");
+        return 1; 
+    }
+    if (stat(objPath, &st) == 0) {
+        printf("DIRECTORY ALREADY EXISTS\n");
+        return 1; 
+    }
+    if (stat(refPath, &st) == 0) {
+        printf("DIRECTORY ALREADY EXISTS\n");
+        return 1; 
+    }
+    int result;
+    //Main dir
+#if defined(_WIN32)
+    result = _mkdir(syncPath);
+#else 
+    result = mkdir(syncPath, 0700); 
+#endif
+
+    if (result != 0) {
+        return 1;
+    }
+
+#if defined(_WIN32)
+    SetFileAttributesA(syncPath, FILE_ATTRIBUTE_HIDDEN);
+#endif
+
+    //Obj dir
+#if defined(_WIN32)
+    result = _mkdir(objPath);
+#else 
+    result = mkdir(objPath, 0700); 
+#endif
+
+    if (result != 0) {
+        return 1;
+    }
+
+#if defined(_WIN32)
+    SetFileAttributesA(objPath, FILE_ATTRIBUTE_HIDDEN);
+#endif
+
+    //Ref dir
+#if defined(_WIN32)
+    result = _mkdir(refPath);
+#else 
+    result = mkdir(refPath, 0700); 
+#endif
+
+    if (result != 0) {
+        return 1;
+    }
+
+#if defined(_WIN32)
+    SetFileAttributesA(refPath, FILE_ATTRIBUTE_HIDDEN);
+#endif
+
+    return 0;
+}
