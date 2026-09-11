@@ -1,5 +1,5 @@
 #include "kw_conf.h"
-#define VERSION "0.0.1"
+#define VERSION "0.0.2"
 #define AUTHOR "KW"
 
 int main(int argc, char *argv[]){
@@ -27,6 +27,20 @@ int main(int argc, char *argv[]){
         else{
             test("autosave");
         }
+        return 0;
+    }
+    //INIT
+    if (strcmp(argv[1], "init") == 0)
+    {
+        bool result = init();
+        if (result == 0)
+        {
+            printf("Initialization success\n");
+        }
+        else{
+            printf("Error 007 INIT FAILED\n");
+            return 1;
+        }   
         return 0;
     }
     
