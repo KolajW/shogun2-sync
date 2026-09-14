@@ -14,6 +14,7 @@
 
 extern char *G_APPDATA;
 extern char *G_LOCALAPPDATA;
+extern volatile bool running;
 
 typedef struct {
     char* type;
@@ -27,3 +28,5 @@ bool getVariables();
 bool scan(mapTree **mt, int *x);
 bool add(char hashTree[41]);
 bool commit(char comment[]);
+bool watch();
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType);
