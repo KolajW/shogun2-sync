@@ -3,8 +3,11 @@
 #define AUTHOR "KW"
 
 int main(int argc, char *argv[]){
-    
-    
+    //Check exit command
+    if (!SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
+        printf("Error: Could not set control handler\n");
+        return 1;
+    }
     //Info
     if( argc < 2){
         printf("Failed: No arguments\n");
@@ -98,6 +101,19 @@ int main(int argc, char *argv[]){
     if (strcmp(argv[1], "commit") == 0)
     {
         bool f = commit("First commit");
+        if(f == 0){
+            printf("Success\n");
+        }
+        else{
+            printf("Failed\n");
+        }
+    }
+
+    //Watch for autosave change
+    if (strcmp(argv[1], "--watch") == 0 || strcmp(argv[1], "-w") == 0)
+    {
+        printf("Use CTRL + C to exit\n");
+        bool f = watch();
         if(f == 0){
             printf("Success\n");
         }

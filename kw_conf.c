@@ -2,6 +2,7 @@
 
 char *G_APPDATA;
 char *G_LOCALAPPDATA;
+volatile bool running = true;
 
 //Needed variables
 bool getVariables(){
@@ -375,4 +376,38 @@ bool commit(char comment[]){
     }
     return 1;
     
+}
+
+bool watch(){
+    HANDLE hd;
+    char savePath[512];
+    bool flag = 0;
+    snprintf(savePath, sizeof(savePath), "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer", G_APPDATA);
+    hd = FindFirstChangeNotificationA(savePath, FALSE, FILE_NOTIFY_CHANGE_LAST_WRITE);
+    while (running)
+    {
+        DWORD status = WaitForSingleObject(hd, 500);
+        if (status == WAIT_OBJECT_0) {
+            printf("New tour...\n");
+            Sleep(500);
+            flag = commit("Auto-tura");
+            if(flag == 1) running = false;
+            FindNextChangeNotification(hd);
+        }
+    }
+    FindCloseChangeNotification(hd);
+    return flag;
+    
+}
+
+BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
+    switch (fdwCtrlType) {
+        case CTRL_C_EVENT:
+            printf("Program stopped\n");
+            running = false;
+            return TRUE;
+            
+        default:
+            return FALSE;
+    }
 }
