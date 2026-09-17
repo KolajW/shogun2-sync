@@ -1,5 +1,5 @@
 #include "kw_conf.h"
-#define VERSION "0.0.4"
+#define VERSION "0.0.5"
 #define AUTHOR "KW"
 
 int main(int argc, char *argv[]){
@@ -107,6 +107,7 @@ int main(int argc, char *argv[]){
         else{
             printf("Failed\n");
         }
+        return 0;
     }
 
     //Watch for autosave change
@@ -120,6 +121,25 @@ int main(int argc, char *argv[]){
         else{
             printf("Failed\n");
         }
+        return 0;
+    }
+
+    //Create room
+    if (strcmp(argv[1], "create") == 0)
+    {
+        mg_log_level = MG_LL_NONE;
+        mg_log_set(MG_LL_NONE);
+        connectToRoom("SHOGUN");
+        connection = true;
+        printf("Use CTRL + C to exit\n");
+        bool f = watch();
+        if(f == 0){
+            printf("Success\n");
+        }
+        else{
+            printf("Failed\n");
+        }
+        return 0;
     }
     
 
