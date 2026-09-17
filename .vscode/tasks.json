@@ -9,8 +9,10 @@
                 "-g",
                 "${workspaceFolder}\\*.c",
                 "${workspaceFolder}/zlib/*.c",
+                "${workspaceFolder}/mongoose/*.c",
                 "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe"
+                "${fileDirname}\\shogun-sync.exe",
+                "-lws2_32"
             ],
             "options": {
                 "cwd": "C:/w64devkit/bin"

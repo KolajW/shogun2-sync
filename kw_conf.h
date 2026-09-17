@@ -1,4 +1,5 @@
 #include "kw_compress.h"
+#include "kw_conn.h"
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -15,6 +16,7 @@
 extern char *G_APPDATA;
 extern char *G_LOCALAPPDATA;
 extern volatile bool running;
+extern bool connection;
 
 typedef struct {
     char* type;

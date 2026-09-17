@@ -3,6 +3,7 @@
 char *G_APPDATA;
 char *G_LOCALAPPDATA;
 volatile bool running = true;
+bool connection = false;
 
 //Needed variables
 bool getVariables(){
@@ -386,13 +387,19 @@ bool watch(){
     hd = FindFirstChangeNotificationA(savePath, FALSE, FILE_NOTIFY_CHANGE_LAST_WRITE);
     while (running)
     {
-        DWORD status = WaitForSingleObject(hd, 500);
+        if (connection)
+        {
+            pollNetwork();
+        }
+        
+        DWORD status = WaitForSingleObject(hd, 10);
+        
         if (status == WAIT_OBJECT_0) {
             printf("New tour...\n");
-            Sleep(500);
+            Sleep(50);
             flag = commit("Auto-tura");
             if(flag == 1) running = false;
-            FindNextChangeNotification(hd);
+            FindNextChangeNotification(hd); 
         }
     }
     FindCloseChangeNotification(hd);
