@@ -18,6 +18,11 @@ extern char *G_LOCALAPPDATA;
 extern volatile bool running;
 extern bool connection;
 
+extern int tour;
+extern char latest[41];
+extern char hostname[256];
+extern char msg[60];
+
 typedef struct {
     char* type;
     char* hash;
@@ -31,4 +36,7 @@ bool scan(mapTree **mt, int *x);
 bool add(char hashTree[41]);
 bool commit(char comment[]);
 bool watch();
+
+char* getLatest();
+
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType);

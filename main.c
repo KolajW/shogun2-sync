@@ -120,6 +120,7 @@ int main(int argc, char *argv[]){
         }
         else{
             printf("Failed\n");
+            return 1;
         }
         return 0;
     }
@@ -127,12 +128,21 @@ int main(int argc, char *argv[]){
     //Create room
     if (strcmp(argv[1], "create") == 0)
     {
+        bool f = commit("Room commit");
+        if(f == 0){
+            printf("Success in commit\n");
+        }
+        else{
+            printf("Failed commit\n");
+            return 1;
+        }
+
         mg_log_level = MG_LL_NONE;
         mg_log_set(MG_LL_NONE);
-        connectToRoom("SHOGUN");
+        connectToRoom(hostname);
         connection = true;
         printf("Use CTRL + C to exit\n");
-        bool f = watch();
+        f = watch();
         if(f == 0){
             printf("Success\n");
         }
