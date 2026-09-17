@@ -7,3 +7,4 @@ extern struct mg_mgr mg;
 void eventManager(struct mg_connection *conn, int ev, void *evData);
 void connectToRoom(char roomName[]);
 void pollNetwork();
+void sendPackage(char msg[],size_t leng);

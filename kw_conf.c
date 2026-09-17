@@ -4,6 +4,11 @@ char *G_APPDATA;
 char *G_LOCALAPPDATA;
 volatile bool running = true;
 bool connection = false;
+char hostname[256];
+
+int tour = 0;
+char latest[41];
+char msg[60];
 
 //Needed variables
 bool getVariables(){
@@ -324,7 +329,7 @@ bool add(char hashTree[41]){
 bool commit(char comment[]){
     char hashTree[41];
     bool f = add(hashTree);
-    char hostname[256];
+    //char hostname[256];
     if (f == 0)
     {
         size_t malSize = sizeof(char) * (4 + 1 + 41 + 1 + 6 + 1 + 256 + 1 + 7 + 1 + strlen(comment))+2;
@@ -363,6 +368,7 @@ bool commit(char comment[]){
                 else{
                     fprintf(lp, "%s", filename);
                     fclose(lp);
+                    strcpy(latest,filename);
                 }
             }
 
@@ -379,6 +385,10 @@ bool commit(char comment[]){
     
 }
 
+char* getLatest(){
+    return "NULL";
+}
+
 bool watch(){
     HANDLE hd;
     char savePath[512];
@@ -391,7 +401,7 @@ bool watch(){
         {
             pollNetwork();
         }
-        
+
         DWORD status = WaitForSingleObject(hd, 10);
         
         if (status == WAIT_OBJECT_0) {
@@ -400,6 +410,9 @@ bool watch(){
             flag = commit("Auto-tura");
             if(flag == 1) running = false;
             FindNextChangeNotification(hd); 
+            tour++;
+            snprintf(msg, sizeof(msg), "%s|%i", latest,tour);
+            sendPackage(msg,strlen(msg));
         }
     }
     FindCloseChangeNotification(hd);

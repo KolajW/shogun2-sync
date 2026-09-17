@@ -1,4 +1,5 @@
 #include "kw_conn.h"
+#include "kw_conf.h"
 
 
 struct mg_connection *c = NULL;
@@ -13,7 +14,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
         printf("Connected with lobby\n");
         break;
     case MG_EV_WS_MSG:
-        printf("Got message\n");
+        
         break;
     }
 }
@@ -25,4 +26,8 @@ void connectToRoom(char roomName[]){
 
 void pollNetwork() {
     mg_mgr_poll(&mg, 10);
+}
+
+void sendPackage(char msg[],size_t leng){
+    mg_ws_send(c,msg,leng,WEBSOCKET_OP_TEXT);
 }
