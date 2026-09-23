@@ -165,55 +165,45 @@ bool init() {
 //Scan all saves
 bool scan(mapTree **mt, int *x){
     char savePath[512];
-
-    snprintf(savePath, sizeof(savePath), "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer", G_APPDATA);
-    struct dirent *de;
-    DIR *dr = opendir(savePath);
-    if (dr == NULL)
-    {
-        printf("Error DIRECTORY CAN NOT BE OPENED" );
-        return 1;
+    snprintf(savePath, sizeof(savePath), "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\*.save_multiplayer", G_APPDATA);
+    
+    WIN32_FIND_DATAA findFileData;
+    HANDLE hFind = FindFirstFileA(savePath, &findFileData);
+    
+    if (hFind == INVALID_HANDLE_VALUE) {
+        *x = 0;
+        return 0;
     }
 
-    const char *ext = ".save_multiplayer";
-    size_t ext_len = strlen(ext);
     size_t f = *x;
     *x = 0;
-    while ((de = readdir(dr)) != NULL){
-        size_t name_len = strlen(de->d_name);
-        if (name_len >= ext_len) {
-            if (strcmp(de->d_name + name_len - ext_len, ext) == 0) {
-                printf("%s\n", de->d_name);
-                (*x)++;
-            }
+    
+    do {
+        if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            printf("%s\n", findFileData.cFileName);
+            (*x)++;
         }
-        
-    }
-    closedir(dr);
+    } while (FindNextFileA(hFind, &findFileData) != 0);
+    FindClose(hFind);
+
     //Load to struct
-    if(f == 0){
-        dr = opendir(savePath);
+    if(f == 0 && *x > 0){
         *mt = malloc(sizeof(mapTree)*(*x));
-        if (dr == NULL)
-        {
-            printf("Error DIRECTORY CAN NOT BE OPENED" );
+        hFind = FindFirstFileA(savePath, &findFileData);
+        if (hFind == INVALID_HANDLE_VALUE) {
+            printf("Error DIRECTORY CAN NOT BE OPENED\n");
             return 1;
         }
         uint16_t i = 0;
-        while ((de = readdir(dr)) != NULL){
-            size_t name_len = strlen(de->d_name);
-            if (name_len >= ext_len) {
-                if (strcmp(de->d_name + name_len - ext_len, ext) == 0) {
-                    char* buf = strdup(de->d_name);
-                    (*mt)[i].name = buf;
-                    (*mt)[i].type = "blob";
-                    i++;
-                }
-                
+        do {
+            if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                char* buf = strdup(findFileData.cFileName);
+                (*mt)[i].name = buf;
+                (*mt)[i].type = "blob";
+                i++;
             }
-            
-        }
-        closedir(dr);
+        } while (FindNextFileA(hFind, &findFileData) != 0);
+        FindClose(hFind);
     }
     return 0;
 }
