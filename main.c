@@ -1,5 +1,5 @@
 #include "kw_conf.h"
-#define VERSION "0.0.5"
+#define VERSION "0.0.7"
 #define AUTHOR "KW"
 
 int main(int argc, char *argv[]){
@@ -149,6 +149,44 @@ int main(int argc, char *argv[]){
         else{
             printf("Failed\n");
         }
+        return 0;
+    }
+
+    //Join to room
+    if (strcmp(argv[1], "join") == 0)
+    {
+        if (argc>2)
+        {
+            bool f = commit("Join commit");
+            if(f == 0){
+                printf("Success in commit\n");
+            }
+            else{
+                printf("Failed commit\n");
+                return 1;
+            }
+
+            mg_log_level = MG_LL_NONE;
+            mg_log_set(MG_LL_NONE);
+            connectToRoom(argv[2]);
+            connection = true;
+            printf("Use CTRL + C to exit\n");
+            f = watch();
+            if(f == 0){
+                printf("Success\n");
+            }
+            else{
+                printf("Failed\n");
+            }
+        }
+        else
+        {
+            printf("No room name\n");
+            return 1;
+        }
+        
+        
+        
         return 0;
     }
     
