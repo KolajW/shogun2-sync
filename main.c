@@ -128,6 +128,7 @@ int main(int argc, char *argv[]){
     //Create room
     if (strcmp(argv[1], "create") == 0)
     {
+        isHost = true;
         bool f = commit("Room commit");
         if(f == 0){
             printf("Success in commit\n");

@@ -26,6 +26,7 @@ extern int tour;
 extern char latest[41];
 extern char hostname[256];
 extern char msg[60];
+extern bool isHost;
 
 typedef struct {
     char* type;

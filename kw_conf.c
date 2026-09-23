@@ -4,6 +4,7 @@ char *G_APPDATA;
 char *G_LOCALAPPDATA;
 volatile bool running = true;
 bool connection = false;
+bool isHost = false;
 char hostname[256];
 
 int tour = 0;
@@ -59,9 +60,11 @@ void test(char saveName[]){
     char fullPath[256];
 
     snprintf(fullPath, sizeof(fullPath), "%s\\ShogunSync\\saves\\%s.z", G_LOCALAPPDATA, filename);
+    struct stat buffer;
 
-    kw_compress(buff,ML,fullPath);
-
+    int exists = stat(fullPath, &buffer);
+    if(exists!=0) kw_compress(buff,ML,fullPath);
+    
     //Free the RAM!
     free(buff);
 }
