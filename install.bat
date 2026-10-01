@@ -6,10 +6,16 @@ echo ==========================================
 echo.
 
 set "INSTALL_DIR=%LOCALAPPDATA%\ShogunSync"
+set "SAVE_DIR=%LOCALAPPDATA%\ShogunSync\saves"
 
 if not exist "%INSTALL_DIR%" (
     echo Creating directory %INSTALL_DIR%...
     mkdir "%INSTALL_DIR%"
+)
+
+if not exist "%SAVE_DIR%" (
+    echo Creating directory %SAVE_DIR%...
+    mkdir "%SAVE_DIR%"
 )
 
 echo Files copying...

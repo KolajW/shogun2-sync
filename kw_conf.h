@@ -7,8 +7,9 @@
 #include "kw_compress.h"
 #include "kw_conn.h"
 
-
-
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #if defined(_WIN32)
 #include <direct.h>

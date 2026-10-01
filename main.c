@@ -1,5 +1,5 @@
 #include "kw_conf.h"
-#define VERSION "0.0.7"
+#define VERSION "0.0.8"
 #define AUTHOR "KW"
 
 int main(int argc, char *argv[]){
