@@ -57,7 +57,7 @@ void test(char saveName[]){
     printS(result);
     char filename[41];
     resultToChar(result, filename, sizeof(filename));
-    char fullPath[256];
+    char fullPath[512];
 
     snprintf(fullPath, sizeof(fullPath), "%s\\ShogunSync\\saves\\%s.z", G_LOCALAPPDATA, filename);
     struct stat buffer;
@@ -183,7 +183,7 @@ bool scan(mapTree **mt, int *x){
     
     do {
         if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            printf("%s\n", findFileData.cFileName);
+            //printf("%s\n", findFileData.cFileName);
             (*x)++;
         }
     } while (FindNextFileA(hFind, &findFileData) != 0);
@@ -200,6 +200,8 @@ bool scan(mapTree **mt, int *x){
         uint16_t i = 0;
         do {
             if (!(findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+                if (i >= *x) break; 
+                
                 char* buf = strdup(findFileData.cFileName);
                 (*mt)[i].name = buf;
                 (*mt)[i].type = "blob";
@@ -248,11 +250,11 @@ bool add(char hashTree[41]){
             //Closing file
             fclose(save);
 
-            printS(result);
+            //printS(result);
 
             char filename[41];
             resultToChar(result, filename, sizeof(filename));
-            char fullPath[256];
+            char fullPath[512];
 
             snprintf(fullPath, sizeof(fullPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects\\%s.z", G_APPDATA, filename);
 
@@ -268,17 +270,18 @@ bool add(char hashTree[41]){
 
             //Size of the map for malloc
             //Blob 4 chars
-            mapSize += 4;
+            //mapSize += 4;
             //Space
-            mapSize += 1;
+            //mapSize += 1;
             //Size of hash - always 41 chars
-            mapSize += 41;
+            //mapSize += 41;
             //Space
-            mapSize += 1;
+            //mapSize += 1;
             //Size of save name
-            mapSize += strlen(mt[i].name);
+            //mapSize += strlen(mt[i].name);
             //Enter
-            mapSize += 1;
+            //mapSize += 1;
+            mapSize += 48 + strlen(mt[i].name); 
         }
         //End of text \0
         mapSize += 1;
@@ -296,7 +299,7 @@ bool add(char hashTree[41]){
         
         char filename[41];
         resultToChar(result, filename, sizeof(filename));
-        char fullPath[256];
+        char fullPath[512];
 
         snprintf(fullPath, sizeof(fullPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects\\%s.m", G_APPDATA, filename);
 
@@ -345,7 +348,7 @@ bool commit(char comment[]){
 
                 char filename[41];
                 resultToChar(result, filename, sizeof(filename));
-                char fullPath[256];
+                char fullPath[512];
 
                 snprintf(fullPath, sizeof(fullPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects\\%s.c", G_APPDATA, filename);
 
@@ -394,18 +397,26 @@ bool watch(){
         {
             pollNetwork();
         }
+        else
+        {
+            Sleep(50);
+        }
+        
 
-        DWORD status = WaitForSingleObject(hd, 10);
+        DWORD status = WaitForSingleObject(hd, 0);
         
         if (status == WAIT_OBJECT_0) {
             printf("New tour...\n");
-            Sleep(50);
+            Sleep(500);
             flag = commit("Auto-tura");
             if(flag == 1) running = false;
             FindNextChangeNotification(hd); 
             tour++;
-            snprintf(msg, sizeof(msg), "%s|%i", latest,tour);
-            sendPackage(msg,strlen(msg));
+
+            if(isHost){
+                snprintf(msg, sizeof(msg), "%s|%i", latest,tour);
+                sendPackage(msg,strlen(msg));
+            }
         }
     }
     FindCloseChangeNotification(hd);

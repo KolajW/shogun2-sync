@@ -24,24 +24,28 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
             memcpy(msg, wm->data.buf, wm->data.len);
             msg[textLen-1] = '\0';
 
-            char receivedHash[41];
-            memcpy(receivedHash,msg,40 * sizeof(char));
-            receivedHash[40] = '\0';
+            if (textLen > 41 && msg[40] == '|') {
+                char receivedHash[41];
+                memcpy(receivedHash,msg,40 * sizeof(char));
+                receivedHash[40] = '\0';
 
-            int receivedTour = atoi(msg + 41);
+                int receivedTour = atoi(msg + 41);
 
-            if(receivedTour == tour){
-                int diff = strcmp(latest,receivedHash);
-                if(diff == 0){
-                    printf("Saves are sync\n");
+                if(receivedTour == tour){
+                    int diff = strcmp(latest,receivedHash);
+                    if(diff == 0){
+                        printf("Saves are sync\n");
+                    }
+                    else
+                    {
+                        printf("Saves are desync\n");
+                    }
+                    
                 }
-                else
-                {
-                    printf("Saves are desync\n");
-                }
-                
             }
-
+            else{
+                printf("[SERWER] %s\n", msg);
+            }
             free(msg);
         }
         break;
@@ -52,13 +56,12 @@ void connectToRoom(char roomName[]){
     printf("Room: %s\nCreated successfully\n",roomName);
     mg_mgr_init(&mg);
     char url[256];
-    snprintf(url, sizeof(url),
-            "ws://localhost:8000/ws/%s", roomName);
+    snprintf(url, sizeof(url), "ws://192.168.1.61:8000/ws/%s", roomName);
     c = mg_ws_connect(&mg, url, eventManager, NULL, NULL);
 }
 
 void pollNetwork() {
-    mg_mgr_poll(&mg, 10);
+    mg_mgr_poll(&mg, 50);
 }
 
 void sendPackage(char msg[],size_t leng){

@@ -31,6 +31,8 @@ void kw_compress(uint8_t *buff, size_t ML, char fileName[]) {
         ret = deflate(&z, Z_FINISH);
         if (ret < 0) {
             printf("Error 003 COMPRESSION PROBLEM: %d\n", ret);
+            fclose(compressedSave);
+            deflateEnd(&z);
             return;
         }
 
