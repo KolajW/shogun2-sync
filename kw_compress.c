@@ -21,6 +21,7 @@ void kw_compress(uint8_t *buff, size_t ML, char fileName[]) {
     compressedSave = fopen(fileName, "wb");
     if (compressedSave == NULL) {
         printf("Error 002: File write failed\n");
+        deflateEnd(&z);
         return;
     }
     do
@@ -57,7 +58,7 @@ bool kw_decompress(uint8_t *buff, size_t ML, char fileName[]) {
 
     ret = inflateInit(&z);
     if (ret != Z_OK) {
-        printf("Error 011: Decompression init failed: %d\n", ret);
+        printf("Error 010: Decompression init failed: %d\n", ret);
         return 1;
     }
 
@@ -74,7 +75,7 @@ bool kw_decompress(uint8_t *buff, size_t ML, char fileName[]) {
 
         ret = inflate(&z, Z_NO_FLUSH);
         if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) {
-            printf("Error 012: Decompression failed: %d\n", ret);
+            printf("Error 011: Decompression stream failed: %d\n", ret);
             fclose(decompressedSave);
             inflateEnd(&z);
             return 1;
@@ -90,7 +91,7 @@ bool kw_decompress(uint8_t *buff, size_t ML, char fileName[]) {
     inflateEnd(&z);
 
     if (ret != Z_STREAM_END) {
-        printf("Error 013: Decompression incomplete: %d\n", ret);
+        printf("Error 011: Decompression incomplete: %d\n", ret);
         return 1;
     }
 
@@ -110,7 +111,7 @@ bool kw_decompress_file(char inFileName[], char outFileName[]) {
     uint8_t *buf = malloc(size);
     if (buf == NULL) {
         fclose(f);
-        printf("Error 010: Memory allocation failed\n");
+        printf("Error 017: Memory allocation failed\n");
         return 1;
     }
     fread(buf, 1, size, f);

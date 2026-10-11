@@ -5,7 +5,7 @@
 [![Language](https://img.shields.io/badge/Language-C-00599C.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%2F_11-blue.svg)](https://www.microsoft.com/windows)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-green.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Release](https://img.shields.io/badge/Release-v0.0.7-brightgreen.svg)]()
+[![Release](https://img.shields.io/badge/Release-v0.1.0--beta-brightgreen.svg)]()
 
 ---
 
@@ -133,24 +133,24 @@ If any operation fails, Shogun-Sync outputs a standardized error code:
 | Code | Identifier | Explanation |
 | :---: | :--- | :--- |
 | **001** | `SAVE_NOT_FOUND` | Multiplayer save file does not exist in the folder yet. |
-| **002** | `BLOB_WRITE_FAILED` | Failed to write compressed object to disk. |
-| **003** | `DEFLATE_STREAM_FAILED` | Zlib compression stream encountered an error. |
-| **004** | `DEFLATE_INIT_FAILED` | Zlib deflate stream initialization failed. |
+| **002** | `FILE_WRITE_FAILED` | Failed to write or save file to disk. |
+| **003** | `COMPRESSION_FAILED` | Zlib compression stream encountered an error. |
+| **004** | `COMPRESSION_INIT_FAILED` | Zlib deflate stream initialization failed. |
 | **005** | `APPDATA_NOT_FOUND` | Windows `%APPDATA%` environment variable is missing. |
 | **006** | `LOCALAPPDATA_NOT_FOUND` | Windows `%LOCALAPPDATA%` environment variable is missing. |
-| **007** | `DIR_CREATE_FAILED` | Could not create hidden `.sync` directories. |
-| **008** | `DIR_OPEN_FAILED` | Could not open the save games folder. |
+| **007** | `INIT_FAILED` | Could not create hidden `.sync` directories. |
+| **008** | `SCAN_FAILED` | Failed to open or read the save games folder. |
 | **009** | `CTRL_HANDLER_FAILED` | Win32 console control handler failed to attach. |
-| **010** | `INFLATE_INIT_FAILED` | Zlib inflate stream initialization failed. |
-| **011** | `INFLATE_STREAM_FAILED` | Zlib decompression stream error. |
-| **012** | `INFLATE_WRITE_FAILED` | Failed to write restored save file to game directory. |
-| **013** | `DECOMPRESS_OPEN_FAILED`| Could not open compressed blob for inflation. |
+| **010** | `DECOMPRESS_INIT_FAILED` | Zlib inflate stream initialization failed. |
+| **011** | `DECOMPRESS_STREAM_FAILED`| Zlib decompression stream error. |
+| **012** | `DECOMPRESS_WRITE_FAILED` | Failed to write restored save file to game directory. |
+| **013** | `DECOMPRESS_OPEN_FAILED` | Could not open compressed blob for inflation. |
 | **014** | `HOSTNAME_FAILED` | Network socket hostname lookup failed. |
 | **015** | `CONN_FAILED` | WebSocket connection to relay server failed. |
-| **016** | `INVALID_PAYLOAD` | Malformed network packet received. |
-| **017** | `COMMIT_FAILED` | Commit creation failed. |
-| **018** | `MANIFEST_WRITE_FAILED` | Failed to write tree manifest file. |
-| **019** | `RESYNC_DECOMPRESS_FAILED` | Failed to decompress save file during Auto-Resync. |
+| **016** | `INVALID_PACKET` | Malformed network packet or invalid path received. |
+| **017** | `MEMORY_ALLOC_FAILED` | Heap memory allocation (`malloc`) failed. |
+| **018** | `COMMIT_FAILED` | Failed to create commit object or update reference pointer. |
+| **019** | `RESYNC_RESTORE_FAILED` | Failed to decompress save file during Auto-Resync. |
 | **020** | `INVALID_ARGUMENTS` | Missing or invalid command line arguments. |
 
 *Detailed diagnostics and recovery manual are available in [`docs/errors.tex`](docs/errors.tex).*

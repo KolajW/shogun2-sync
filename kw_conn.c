@@ -4,9 +4,15 @@
 
 struct mg_connection *c = NULL;
 struct mg_mgr mg;
+int lastHostTour = -1;
+char lastHostHash[41] = {0};
 
 void sendSaveToClient(const char *saveName) {
     if (c == NULL) return;
+    if (saveName == NULL || strstr(saveName, "..") != NULL || strchr(saveName, '/') != NULL || strchr(saveName, '\\') != NULL) {
+        printf("Error 016: Invalid packet received\n");
+        return;
+    }
     char savePath[512];
     snprintf(savePath, sizeof(savePath), "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\%s", G_APPDATA, saveName);
 
@@ -23,7 +29,7 @@ void sendSaveToClient(const char *saveName) {
     uint8_t *fileBuf = malloc(fileSize);
     if (!fileBuf) {
         fclose(f);
-        printf("Error 010: Memory allocation failed\n");
+        printf("Error 017: Memory allocation failed\n");
         return;
     }
     fread(fileBuf, 1, fileSize, f);
@@ -33,7 +39,7 @@ void sendSaveToClient(const char *saveName) {
     uint8_t *payload = malloc(64 + compSize);
     if (!payload) {
         free(fileBuf);
-        printf("Error 010: Memory allocation failed\n");
+        printf("Error 017: Memory allocation failed\n");
         return;
     }
 
@@ -107,6 +113,8 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 receivedHash[40] = '\0';
 
                 int receivedTour = atoi(msg + 41);
+                lastHostTour = receivedTour;
+                memcpy(lastHostHash, receivedHash, sizeof(lastHostHash));
 
                 if (receivedTour == tour) {
                     int diff = strcmp(latest, receivedHash);
