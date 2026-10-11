@@ -1,6 +1,6 @@
 #include "kw_conf.h"
 #include <time.h>
-#define VERSION "0.0.8"
+#define VERSION "0.0.9"
 #define AUTHOR "KW"
 
 void generateRoomCode(char *code, size_t len) {
