@@ -1,6 +1,15 @@
 #include "kw_conf.h"
+#include <time.h>
 #define VERSION "0.0.8"
 #define AUTHOR "KW"
+
+void generateRoomCode(char *code, size_t len) {
+    const char charset[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    for (size_t i = 0; i < len - 1; i++) {
+        code[i] = charset[rand() % (sizeof(charset) - 1)];
+    }
+    code[len - 1] = '\0';
+}
 
 int main(int argc, char *argv[]){
     //Check exit command
@@ -128,6 +137,12 @@ int main(int argc, char *argv[]){
     //Create room
     if (strcmp(argv[1], "create") == 0)
     {
+        if (argc < 3) {
+            printf("Failed: Password required\n");
+            printf("Use: shogun-sync create [password]\n");
+            return 1;
+        }
+
         isHost = true;
         bool f = commit("Room commit");
         if(f == 0){
@@ -138,9 +153,16 @@ int main(int argc, char *argv[]){
             return 1;
         }
 
+        srand((unsigned int)time(NULL));
+        char roomCode[7];
+        generateRoomCode(roomCode, sizeof(roomCode));
+
+        printf("Room code: %s\n", roomCode);
+        printf("Password: %s\n", argv[2]);
+
         mg_log_level = MG_LL_NONE;
         mg_log_set(MG_LL_NONE);
-        connectToRoom(hostname);
+        connectToRoom(roomCode, argv[2], "create");
         connection = true;
         printf("Use CTRL + C to exit\n");
         f = watch();
@@ -156,7 +178,7 @@ int main(int argc, char *argv[]){
     //Join to room
     if (strcmp(argv[1], "join") == 0)
     {
-        if (argc>2)
+        if (argc > 3)
         {
             bool f = commit("Join commit");
             if(f == 0){
@@ -169,7 +191,7 @@ int main(int argc, char *argv[]){
 
             mg_log_level = MG_LL_NONE;
             mg_log_set(MG_LL_NONE);
-            connectToRoom(argv[2]);
+            connectToRoom(argv[2], argv[3], "join");
             connection = true;
             printf("Use CTRL + C to exit\n");
             f = watch();
@@ -182,18 +204,13 @@ int main(int argc, char *argv[]){
         }
         else
         {
-            printf("No room name\n");
+            printf("Failed: Room code and password required\n");
+            printf("Use: shogun-sync join [room_code] [password]\n");
             return 1;
         }
-        
-        
-        
+
         return 0;
     }
-    
-
-    
 
     return 0;
 }
-
