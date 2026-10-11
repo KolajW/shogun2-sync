@@ -15,13 +15,13 @@ char msg[60];
 bool getVariables(){
     G_APPDATA = getenv("APPDATA");
     if (G_APPDATA == NULL) {
-        printf("Error 005 APPDATA PATH NOT FOUND:\n");
+        printf("Error 005: AppData path not found\n");
         return 1;
     }
 
     G_LOCALAPPDATA = getenv("LOCALAPPDATA");
     if (G_LOCALAPPDATA == NULL) {
-        printf("Error 006 PROGRAM PATH NOT FOUND:\n");
+        printf("Error 006: LocalAppData path not found\n");
         return 1;
     }
     return 0;
@@ -35,7 +35,7 @@ void test(char saveName[]){
     FILE *save = fopen(savePath,"rb");
     //Possible error
     if (save == NULL) {
-        printf("Error 001 SAVE NOT FOUND\n");
+        printf("Error 001: Save file not found\n");
         return;
     }
 
@@ -194,7 +194,7 @@ bool scan(mapTree **mt, int *x){
         *mt = malloc(sizeof(mapTree)*(*x));
         hFind = FindFirstFileA(savePath, &findFileData);
         if (hFind == INVALID_HANDLE_VALUE) {
-            printf("Error DIRECTORY CAN NOT BE OPENED\n");
+            printf("Error 008: Directory scan failed\n");
             return 1;
         }
         uint16_t i = 0;
@@ -231,7 +231,7 @@ bool add(char hashTree[41]){
             FILE *save = fopen(savePath,"rb");
             //Possible error
             if (save == NULL) {
-                printf("Error 001 SAVE NOT FOUND\n");
+                printf("Error 001: Save file not found\n");
                 return 1;
             }
 
@@ -310,7 +310,7 @@ bool add(char hashTree[41]){
         free(buff);
     }
     else{
-        printf("Error scan failed\n");
+        printf("Error 008: Directory scan failed\n");
         return 1;
     }   
     for (size_t i = 0; i < x; i++)
@@ -334,7 +334,7 @@ bool commit(char comment[]){
             #ifdef _WIN32
                 WSADATA wsaData;
             if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-                printf("Winsock initialization failed.\n");
+                printf("Error 014: Winsock init failed\n");
                 free(buff);
                 return 1;
             }
@@ -354,18 +354,26 @@ bool commit(char comment[]){
 
                 kw_compress(buff,strlen(buff),fullPath);
 
-                char latestPath[256];
+                char latestPath[512];
                 snprintf(latestPath, sizeof(latestPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\refs\\latest", G_APPDATA);
                 FILE *lp = fopen(latestPath,"w");
                 //Possible error
                 if (lp == NULL) {
-                    printf("Error 001 SAVE NOT FOUND\n");
+                    printf("Error 019: Reference update failed\n");
                 }
                 else{
                     fprintf(lp, "%s", filename);
                     fclose(lp);
                     strcpy(latest,filename);
                 }
+            }
+            else {
+                printf("Error 018: Hostname resolution failed\n");
+                #ifdef _WIN32
+                    WSACleanup();
+                #endif
+                free(buff);
+                return 1;
             }
 
             //Cleaning

@@ -6,12 +6,13 @@ struct mg_connection *c = NULL;
 struct mg_mgr mg;
 
 void sendSaveToClient(const char *saveName) {
+    if (c == NULL) return;
     char savePath[512];
     snprintf(savePath, sizeof(savePath), "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\%s", G_APPDATA, saveName);
 
     FILE *f = fopen(savePath, "rb");
     if (!f) {
-        printf("Error: Save file not found: %s\n", savePath);
+        printf("Error 001: Save file not found: %s\n", savePath);
         return;
     }
 
@@ -22,7 +23,7 @@ void sendSaveToClient(const char *saveName) {
     uint8_t *fileBuf = malloc(fileSize);
     if (!fileBuf) {
         fclose(f);
-        printf("Error: Memory allocation failed\n");
+        printf("Error 010: Memory allocation failed\n");
         return;
     }
     fread(fileBuf, 1, fileSize, f);
@@ -32,7 +33,7 @@ void sendSaveToClient(const char *saveName) {
     uint8_t *payload = malloc(64 + compSize);
     if (!payload) {
         free(fileBuf);
-        printf("Error: Memory allocation failed\n");
+        printf("Error 010: Memory allocation failed\n");
         return;
     }
 
@@ -43,7 +44,7 @@ void sendSaveToClient(const char *saveName) {
     free(fileBuf);
 
     if (res != Z_OK) {
-        printf("Error 003 COMPRESSION PROBLEM: %d\n", res);
+        printf("Error 003: Compression failed: %d\n", res);
         free(payload);
         return;
     }
@@ -66,7 +67,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
         int msgtype = wm->flags & 0x0F;
         if (msgtype == WEBSOCKET_OP_BINARY) {
             if (wm->data.len <= 64) {
-                printf("Error: Invalid binary packet received\n");
+                printf("Error 016: Invalid packet received\n");
                 break;
             }
 
@@ -87,7 +88,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 printf("Resync: Save restored successfully\n");
                 commit("Resync commit");
             } else {
-                printf("Resync: Failed to restore save\n");
+                printf("Error 019: Resync restore failed\n");
             }
         } else if (msgtype == WEBSOCKET_OP_TEXT) {
             size_t textLen = wm->data.len + 1;
@@ -129,7 +130,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
         break;
     }
     case MG_EV_ERROR:
-        printf("Error: Connection failed: %s\n", (char *) evData);
+        printf("Error 015: Connection failed: %s\n", (char *) evData);
         connection = false;
         running = false;
         break;
@@ -149,7 +150,7 @@ void connectToRoom(char roomName[], char password[], char action[]){
     snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s", roomName, password, action);
     c = mg_ws_connect(&mg, url, eventManager, NULL, NULL);
     if (c == NULL) {
-        printf("Error: Could not initialize connection\n");
+        printf("Error 015: Connection failed\n");
         running = false;
     }
 }
