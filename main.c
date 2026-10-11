@@ -14,15 +14,30 @@ void generateRoomCode(char *code, size_t len) {
 int main(int argc, char *argv[]){
     //Check exit command
     if (!SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
-        printf("Error: Could not set control handler\n");
+        printf("Error 009: Control handler failed\n");
         return 1;
     }
     //Info
     if( argc < 2){
-        printf("Failed: No arguments\n");
+        printf("Error 020: Command line argument missing\n");
         printf("Use: shogun-sync [args]\n");
         printf("Type: 'shogun-sync --help' for more informations\n");
         return 1;
+    }
+    //Help
+    if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)
+    {
+        printf("Usage: shogun-sync [command] [options]\n\n");
+        printf("Commands:\n");
+        printf("  init                       Initialize synchronization directories\n");
+        printf("  create <password>          Create a multiplayer room with a generated code\n");
+        printf("  join <room_code> <pass>    Join an existing multiplayer room\n");
+        printf("  commit                     Create a local save state commit\n");
+        printf("  --watch, -w                Watch save directory for changes\n");
+        printf("  --scan, -s                 Scan and count save files\n");
+        printf("  --version, -v              Display version information\n");
+        printf("  --help, -h                 Display help information\n");
+        return 0;
     }
     //Version
     if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)
@@ -35,7 +50,7 @@ int main(int argc, char *argv[]){
     bool condition = getVariables();
     if (condition == 1)
     {
-        printf("Failed: Variables issue\n");
+        printf("Error 005: Variable initialization failed\n");
         return 1;
     }
     //TEST
@@ -59,7 +74,7 @@ int main(int argc, char *argv[]){
             printf("Initialization success\n");
         }
         else{
-            printf("Error 007 INIT FAILED\n");
+            printf("Error 007: Initialization failed\n");
             return 1;
         }   
         return 0;
@@ -74,7 +89,7 @@ int main(int argc, char *argv[]){
             printf("Scan completed\n");
         }
         else{
-            printf("Error scan failed\n");
+            printf("Error 008: Directory scan failed\n");
             return 1;
         }   
         return 0;
@@ -91,13 +106,12 @@ int main(int argc, char *argv[]){
             printf("Scan completed\n");
         }
         else{
-            printf("Error scan failed\n");
+            printf("Error 008: Directory scan failed\n");
             return 1;
         }  
         for (size_t i = 0; i < x; i++)
         {
-            printf(mt[i].name);
-            printf("\n");
+            printf("%s\n", mt[i].name);
             free(mt[i].name);
         }
         
@@ -114,7 +128,7 @@ int main(int argc, char *argv[]){
             printf("Success\n");
         }
         else{
-            printf("Failed\n");
+            printf("Error 017: Commit creation failed\n");
         }
         return 0;
     }
@@ -138,7 +152,7 @@ int main(int argc, char *argv[]){
     if (strcmp(argv[1], "create") == 0)
     {
         if (argc < 3) {
-            printf("Failed: Password required\n");
+            printf("Error 020: Password required\n");
             printf("Use: shogun-sync create [password]\n");
             return 1;
         }
@@ -149,7 +163,7 @@ int main(int argc, char *argv[]){
             printf("Success in commit\n");
         }
         else{
-            printf("Failed commit\n");
+            printf("Error 017: Commit creation failed\n");
             return 1;
         }
 
@@ -185,7 +199,7 @@ int main(int argc, char *argv[]){
                 printf("Success in commit\n");
             }
             else{
-                printf("Failed commit\n");
+                printf("Error 017: Commit creation failed\n");
                 return 1;
             }
 
@@ -204,7 +218,7 @@ int main(int argc, char *argv[]){
         }
         else
         {
-            printf("Failed: Room code and password required\n");
+            printf("Error 020: Room code and password required\n");
             printf("Use: shogun-sync join [room_code] [password]\n");
             return 1;
         }
