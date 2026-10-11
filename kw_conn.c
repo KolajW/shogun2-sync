@@ -1,6 +1,7 @@
 #include "kw_conn.h"
 #include "kw_conf.h"
 #include "zlib/zlib.h"
+#include <time.h>
 
 struct mg_connection *c = NULL;
 struct mg_mgr mg;
@@ -65,6 +66,13 @@ void sendSaveToClient(const char *saveName) {
 void eventManager(struct mg_connection *conn, int ev, void *evData){
     switch (ev)
     {
+    case MG_EV_CONNECT: {
+        struct mg_tls_opts opts = {0};
+        opts.name = mg_str("shogun2-sync.duckdns.org");
+        opts.skip_verification = true;
+        mg_tls_init(conn, &opts);
+        break;
+    }
     case MG_EV_WS_OPEN:
         printf("Connected with lobby\n");
         break;
@@ -154,6 +162,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
 
 void connectToRoom(char roomName[], char password[], char action[]){
     mg_mgr_init(&mg);
+    mg_boot_timestamp_ms = (uint64_t)time(NULL) * 1000;
     char url[512];
     snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s", roomName, password, action);
     c = mg_ws_connect(&mg, url, eventManager, NULL, NULL);

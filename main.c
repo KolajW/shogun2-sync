@@ -12,6 +12,7 @@ void generateRoomCode(char *code, size_t len) {
 }
 
 int main(int argc, char *argv[]){
+    setvbuf(stdout, NULL, _IONBF, 0);
     //Check exit command
     if (!SetConsoleCtrlHandler(CtrlHandler, TRUE)) {
         printf("Error 009: Control handler failed\n");
