@@ -22,6 +22,10 @@ void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
     
 
     uint8_t *input = malloc(ML + 1 + diff + 8);
+    if (input == NULL) {
+        printf("Error 017: Memory allocation failed\n");
+        return;
+    }
 
     memcpy(input, message, ML);
     

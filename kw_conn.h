@@ -8,6 +8,8 @@
 
 extern struct mg_connection *c;
 extern struct mg_mgr mg;
+extern int lastHostTour;
+extern char lastHostHash[41];
 
 void eventManager(struct mg_connection *conn, int ev, void *evData);
 void connectToRoom(char roomName[], char password[], char action[]);

@@ -24,6 +24,17 @@ bool getVariables(){
         printf("Error 006: LocalAppData path not found\n");
         return 1;
     }
+
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        printf("Error 014: Hostname resolution failed\n");
+        return 1;
+    }
+#endif
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        strncpy(hostname, "unknown", sizeof(hostname) - 1);
+    }
     return 0;
 }
 
@@ -46,6 +57,11 @@ void test(char saveName[]){
 
     //Save File into RAM
     uint8_t *buff = malloc(ML);
+    if (buff == NULL) {
+        fclose(save);
+        printf("Error 017: Memory allocation failed\n");
+        return;
+    }
     fread(buff,1,ML,save);
     //Array for SHA1
     uint32_t result[5];
@@ -228,10 +244,20 @@ bool add(char hashTree[41]){
             snprintf(savePath, sizeof(savePath),
             "%s\\The Creative Assembly\\Shogun2\\save_games_multiplayer\\%s", G_APPDATA,mt[i].name);
             //Open file
-            FILE *save = fopen(savePath,"rb");
+            FILE *save = NULL;
+            for (int r = 0; r < 5; r++) {
+                save = fopen(savePath, "rb");
+                if (save != NULL) break;
+                Sleep(100);
+            }
             //Possible error
             if (save == NULL) {
                 printf("Error 001: Save file not found\n");
+                for (size_t j = 0; j < i; j++) {
+                    free(mt[j].name);
+                    free(mt[j].hash);
+                }
+                free(mt);
                 return 1;
             }
 
@@ -242,6 +268,16 @@ bool add(char hashTree[41]){
 
             //Save File into RAM
             uint8_t *buff = malloc(ML);
+            if (buff == NULL) {
+                fclose(save);
+                printf("Error 017: Memory allocation failed\n");
+                for (size_t j = 0; j < i; j++) {
+                    free(mt[j].name);
+                    free(mt[j].hash);
+                }
+                free(mt);
+                return 1;
+            }
             fread(buff,1,ML,save);
             //Array for SHA1
             uint32_t result[5];
@@ -286,6 +322,15 @@ bool add(char hashTree[41]){
         //End of text \0
         mapSize += 1;
         uint8_t *buff = malloc(mapSize * sizeof(uint8_t));
+        if (buff == NULL) {
+            printf("Error 017: Memory allocation failed\n");
+            for (size_t j = 0; j < x; j++) {
+                free(mt[j].name);
+                free(mt[j].hash);
+            }
+            free(mt);
+            return 1;
+        }
         int offset = 0;
         for (size_t i = 0; i < x; i++)
         {
@@ -331,55 +376,34 @@ bool commit(char comment[]){
         size_t malSize = sizeof(char) * (4 + 1 + 41 + 1 + 6 + 1 + 256 + 1 + 7 + 1 + strlen(comment))+2;
         char *buff = malloc(malSize);
         if(buff != NULL){
-            #ifdef _WIN32
-                WSADATA wsaData;
-            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-                printf("Error 014: Winsock init failed\n");
-                free(buff);
-                return 1;
+            snprintf((char*)buff, malSize, "Tree %s Author %s Comment %s\n",hashTree,hostname,comment);
+
+            //Hash commit
+            uint32_t result[5];
+            sha1(buff,strlen(buff),result);
+
+            char filename[41];
+            resultToChar(result, filename, sizeof(filename));
+            char fullPath[512];
+
+            snprintf(fullPath, sizeof(fullPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects\\%s.c", G_APPDATA, filename);
+
+            kw_compress(buff,strlen(buff),fullPath);
+
+            char latestPath[512];
+            snprintf(latestPath, sizeof(latestPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\refs\\latest", G_APPDATA);
+            FILE *lp = fopen(latestPath,"w");
+            //Possible error
+            if (lp == NULL) {
+                printf("Error 018: Reference update failed\n");
             }
-            #endif
-            if (gethostname(hostname, sizeof(hostname)) == 0) {
-                snprintf((char*)buff, malSize, "Tree %s Author %s Comment %s\n",hashTree,hostname,comment);
-
-                //Hash commit
-                uint32_t result[5];
-                sha1(buff,strlen(buff),result);
-
-                char filename[41];
-                resultToChar(result, filename, sizeof(filename));
-                char fullPath[512];
-
-                snprintf(fullPath, sizeof(fullPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\objects\\%s.c", G_APPDATA, filename);
-
-                kw_compress(buff,strlen(buff),fullPath);
-
-                char latestPath[512];
-                snprintf(latestPath, sizeof(latestPath), "%s\\The Creative Assembly\\Shogun2\\.sync\\refs\\latest", G_APPDATA);
-                FILE *lp = fopen(latestPath,"w");
-                //Possible error
-                if (lp == NULL) {
-                    printf("Error 019: Reference update failed\n");
-                }
-                else{
-                    fprintf(lp, "%s", filename);
-                    fclose(lp);
-                    strcpy(latest,filename);
-                }
-            }
-            else {
-                printf("Error 018: Hostname resolution failed\n");
-                #ifdef _WIN32
-                    WSACleanup();
-                #endif
-                free(buff);
-                return 1;
+            else{
+                fprintf(lp, "%s", filename);
+                fclose(lp);
+                strcpy(latest,filename);
             }
 
             //Cleaning
-            #ifdef _WIN32
-                WSACleanup();
-            #endif
             free(buff);
             return 0;
         }
@@ -424,6 +448,21 @@ bool watch(){
             if(isHost){
                 snprintf(msg, sizeof(msg), "%s|%i", latest,tour);
                 sendPackage(msg,strlen(msg));
+            }
+            else{
+                if (lastHostTour == tour) {
+                    int diff = strcmp(latest, lastHostHash);
+                    if (diff == 0) {
+                        printf("Saves are sync\n");
+                    }
+                    else {
+                        printf("Saves are desync\n");
+                        printf("Resync: Requesting save from host...\n");
+                        char req[64];
+                        snprintf(req, sizeof(req), "REQ_SAVE|autosave.save_multiplayer");
+                        sendPackage(req, strlen(req));
+                    }
+                }
             }
         }
     }

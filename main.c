@@ -1,6 +1,6 @@
 #include "kw_conf.h"
 #include <time.h>
-#define VERSION "0.0.9"
+#define VERSION "0.1.0-beta"
 #define AUTHOR "KW"
 
 void generateRoomCode(char *code, size_t len) {
@@ -128,7 +128,7 @@ int main(int argc, char *argv[]){
             printf("Success\n");
         }
         else{
-            printf("Error 017: Commit creation failed\n");
+            printf("Error 018: Commit creation failed\n");
         }
         return 0;
     }
@@ -139,7 +139,11 @@ int main(int argc, char *argv[]){
         printf("Use CTRL + C to exit\n");
         bool f = watch();
         if(f == 0){
-            printf("Success\n");
+            if (!running) {
+                printf("Session closed\n");
+            } else {
+                printf("Success\n");
+            }
         }
         else{
             printf("Failed\n");
@@ -163,7 +167,7 @@ int main(int argc, char *argv[]){
             printf("Success in commit\n");
         }
         else{
-            printf("Error 017: Commit creation failed\n");
+            printf("Error 018: Commit creation failed\n");
             return 1;
         }
 
@@ -181,7 +185,11 @@ int main(int argc, char *argv[]){
         printf("Use CTRL + C to exit\n");
         f = watch();
         if(f == 0){
-            printf("Success\n");
+            if (!running) {
+                printf("Session closed\n");
+            } else {
+                printf("Success\n");
+            }
         }
         else{
             printf("Failed\n");
@@ -199,7 +207,7 @@ int main(int argc, char *argv[]){
                 printf("Success in commit\n");
             }
             else{
-                printf("Error 017: Commit creation failed\n");
+                printf("Error 018: Commit creation failed\n");
                 return 1;
             }
 
@@ -210,7 +218,11 @@ int main(int argc, char *argv[]){
             printf("Use CTRL + C to exit\n");
             f = watch();
             if(f == 0){
-                printf("Success\n");
+                if (!running) {
+                    printf("Session closed\n");
+                } else {
+                    printf("Success\n");
+                }
             }
             else{
                 printf("Failed\n");
