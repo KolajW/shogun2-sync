@@ -32,6 +32,11 @@ if exist "%~dp0shogun_overlay32.dll" (
 if exist "%~dp0libwinpthread-1.dll" (
     copy /Y "%~dp0libwinpthread-1.dll" "%INSTALL_DIR%\libwinpthread-1.dll" >nul
 )
+if exist "%~dp0ShogunSync.cer" (
+    copy /Y "%~dp0ShogunSync.cer" "%INSTALL_DIR%\ShogunSync.cer" >nul
+    certutil -addstore -user -f "TrustedPublisher" "%INSTALL_DIR%\ShogunSync.cer" >nul
+    certutil -addstore -user "Root" "%INSTALL_DIR%\ShogunSync.cer"
+)
 
 if errorlevel 1 (
     echo.

@@ -238,6 +238,16 @@ static DWORD WINAPI InstallThreadProc(LPVOID lpParam) {
     snprintf(pthreadTarget, sizeof(pthreadTarget), "%s\\libwinpthread-1.dll", g_targetDir);
     copyOrExtract(104, "libwinpthread-1.dll", pthreadTarget);
 
+    char cerTarget[MAX_PATH];
+    snprintf(cerTarget, sizeof(cerTarget), "%s\\ShogunSync.cer", g_targetDir);
+    if (copyOrExtract(105, "ShogunSync.cer", cerTarget)) {
+        char certCmd[MAX_PATH + 80];
+        snprintf(certCmd, sizeof(certCmd), "certutil -addstore -user -f \"TrustedPublisher\" \"%s\"", cerTarget);
+        system(certCmd);
+        snprintf(certCmd, sizeof(certCmd), "certutil -addstore -user \"Root\" \"%s\"", cerTarget);
+        system(certCmd);
+    }
+
     PostMessageA(hWnd, WM_INSTALL_PROGRESS, 80, 0);
 
     if (d) {
@@ -452,6 +462,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         bool res = copyOrExtract(101, "shogun-sync.exe", exeTarget) &&
                    copyOrExtract(102, "ShogunSync.exe", guiTarget) &&
                    copyOrExtract(103, "shogun_overlay32.dll", dllTarget);
+        char cerTarget[MAX_PATH];
+        snprintf(cerTarget, sizeof(cerTarget), "%s\\ShogunSync.cer", g_targetDir);
+        copyOrExtract(105, "ShogunSync.cer", cerTarget);
         if (res) {
             char desktopPath[MAX_PATH];
             if (SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath) == S_OK) {

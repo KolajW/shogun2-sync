@@ -3,6 +3,7 @@
 102 RCDATA "ShogunSync.exe"
 103 RCDATA "shogun_overlay32.dll"
 104 RCDATA "libwinpthread-1.dll"
+105 RCDATA "ShogunSync.cer"
 
 1 VERSIONINFO
 FILEVERSION 0,1,1,0
