@@ -9,7 +9,6 @@ void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
     uint32_t H3 = 0x10325476;
     uint32_t H4 = 0xC3D2E1F0;
 
-    //Counting size in BITS
     uint64_t bits = (uint64_t)ML * 8;
 
     size_t diff = (ML + 1) % 64;
@@ -42,9 +41,7 @@ void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
     }
     
     size_t div = (ML + 1 + diff + 8)/64;
-    //package *packages = malloc(div  * sizeof(package));
     package pg;
-    //Break into 512 bits chunks
     for (size_t i = 0; i < div; i++)
     {
         for (size_t j = 0; j < 16; j++)
@@ -56,22 +53,17 @@ void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
             }
         }
 
-        //Extend to 80 Words
         for (size_t c = 16; c < 80; c++)
         {
            pg.word[c] = leftRotate((pg.word[c-3]^pg.word[c-8]^pg.word[c-14]^pg.word[c-16]),1);
         }
 
-        //Hash Values
         uint32_t a = H0;
         uint32_t b = H1;
         uint32_t c = H2;
         uint32_t d = H3;
         uint32_t e = H4;
 
-        
-
-        //Main Loop
         for (size_t j = 0; j < 80; j++)
         {
             uint32_t f = 0;
@@ -115,7 +107,6 @@ void sha1(const uint8_t *message, size_t ML, uint32_t result[5]){
     result[3] = H3;
     result[4] = H4;
 
-    //free(packages);
     free(input);
 }
 
@@ -134,7 +125,3 @@ void resultToChar(uint32_t result[], char* resultChar, size_t ML){
         offset += snprintf(resultChar + offset, ML - offset, "%08x", result[i]);
     }
 }
-
-/*uint32_t leftRotate(uint32_t x, size_t offset){
-    return ((x<<offset) | (x>>(32-offset)));
-}*/

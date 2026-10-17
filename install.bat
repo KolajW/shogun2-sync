@@ -1,5 +1,11 @@
 @echo off
 title Shogun Sync Installation
+
+if exist "%~dp0ShogunSyncSetup.exe" (
+    start "" "%~dp0ShogunSyncSetup.exe" %*
+    exit /b 0
+)
+
 echo ==========================================
 echo       Installation Shogun Sync Tool
 echo ==========================================
@@ -20,6 +26,12 @@ if not exist "%SAVE_DIR%" (
 
 echo Files copying...
 copy /Y "%~dp0shogun-sync.exe" "%INSTALL_DIR%\shogun-sync.exe" >nul
+if exist "%~dp0shogun_overlay32.dll" (
+    copy /Y "%~dp0shogun_overlay32.dll" "%INSTALL_DIR%\shogun_overlay32.dll" >nul
+)
+if exist "%~dp0libwinpthread-1.dll" (
+    copy /Y "%~dp0libwinpthread-1.dll" "%INSTALL_DIR%\libwinpthread-1.dll" >nul
+)
 
 if errorlevel 1 (
     echo.

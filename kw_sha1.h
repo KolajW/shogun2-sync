@@ -8,9 +8,6 @@
 
 void sha1(const uint8_t *message, size_t ML, uint32_t result[5]);
 
-//uint32_t leftRotate(uint32_t x, size_t offset);
-
-//Chunk rep
 typedef struct {
     uint32_t word[80];
 } package;

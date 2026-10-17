@@ -1,5 +1,6 @@
 #include "kw_conn.h"
 #include "kw_conf.h"
+#include "kw_gui.h"
 #include "zlib/zlib.h"
 #include <time.h>
 
@@ -75,6 +76,10 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
     }
     case MG_EV_WS_OPEN:
         printf("Connected with lobby\n");
+        if (shared != NULL) {
+            shared->status = SYNC_STATUS_OK;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Connected with lobby");
+        }
         break;
     case MG_EV_WS_MSG: {
         struct mg_ws_message *wm = (struct mg_ws_message *) evData;
@@ -97,13 +102,35 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
             uint8_t *compressedData = (uint8_t *)wm->data.buf + 64;
             size_t compressedLen = wm->data.len - 64;
 
+            g_isRestoringSave = true;
             bool decErr = kw_decompress(compressedData, compressedLen, targetPath);
             if (decErr == 0) {
                 printf("Resync: Save restored successfully\n");
                 commit("Resync commit");
+                g_lastRestoreTick = GetTickCount();
+                if (lastHostTour >= 0) {
+                    tour = lastHostTour;
+                }
+                strcpy(g_previousSaveHash, lastHostHash);
+                strcpy(latestActiveHash, lastHostHash);
+                strcpy(latestTree, lastHostHash);
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_OK;
+                    shared->tour = tour;
+                    shared->triggerReload = true;
+                    strncpy(shared->lastSaveName, saveName, sizeof(shared->lastSaveName) - 1);
+                    shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Save injected - reloading...");
+                }
             } else {
                 printf("Error 019: Resync restore failed\n");
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DESYNC;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Resync restore failed");
+                }
             }
+            Sleep(500);
+            g_isRestoringSave = false;
         } else if (msgtype == WEBSOCKET_OP_TEXT) {
             size_t textLen = wm->data.len + 1;
             char *msg = malloc(textLen * sizeof(char));
@@ -124,22 +151,59 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 lastHostTour = receivedTour;
                 memcpy(lastHostHash, receivedHash, sizeof(lastHostHash));
 
-                if (receivedTour == tour) {
-                    int diff = strcmp(latest, receivedHash);
-                    if (diff == 0) {
-                        printf("Saves are sync\n");
+                const char *secondPipe = strchr(msg + 41, '|');
+                if (secondPipe != NULL && shared != NULL) {
+                    const char *saveFromHost = secondPipe + 1;
+                    if (strlen(saveFromHost) > 0 && strstr(saveFromHost, "..") == NULL && strchr(saveFromHost, '/') == NULL && strchr(saveFromHost, '\\') == NULL) {
+                        strncpy(shared->lastSaveName, saveFromHost, sizeof(shared->lastSaveName) - 1);
+                        shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
                     }
-                    else {
-                        printf("Saves are desync\n");
-                        printf("Resync: Requesting save from host...\n");
-                        char req[64];
-                        snprintf(req, sizeof(req), "REQ_SAVE|autosave.save_multiplayer");
-                        sendPackage(req, strlen(req));
+                }
+
+                if (!isHost) {
+                    if (receivedTour == tour) {
+                        int diff = strcmp(latestActiveHash, receivedHash);
+                        if (diff == 0) {
+                            printf("Saves are sync\n");
+                            if (shared != NULL) {
+                                shared->status = SYNC_STATUS_OK;
+                                snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
+                            }
+                        }
+                        else {
+                            printf("Saves are desync\n");
+                            if (shared != NULL) {
+                                shared->status = SYNC_STATUS_DESYNC;
+                                snprintf(shared->status_msg, sizeof(shared->status_msg), "Desync detected! Resyncing...");
+                            }
+                            printf("Resync: Requesting save from host...\n");
+                            char req[128];
+                            const char *tgt = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+                            snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
+                            sendPackage(req, strlen(req));
+                        }
+                    } else if (receivedTour > tour) {
+                        if (shared != NULL) {
+                            shared->status = SYNC_STATUS_OK;
+                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Host at Tour %d - waiting for turn...", receivedTour);
+                        }
                     }
                 }
             }
             else {
+                const char *p = strstr(msg, "Players in lobby: ");
+                if (p != NULL) {
+                    uint32_t users = 0, max_u = 0;
+                    if (sscanf(p, "Players in lobby: %u/%u", &users, &max_u) == 2) {
+                        if (shared != NULL) {
+                            shared->lobbyUsers = users;
+                            shared->lobbyMaxUsers = max_u;
+                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Lobby: %u/%u connected", users, max_u);
+                        }
+                    }
+                }
                 printf("%s\n", msg);
+                GuiLog(msg);
             }
             free(msg);
         }
@@ -147,12 +211,20 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
     }
     case MG_EV_ERROR:
         printf("Error 015: Connection failed: %s\n", (char *) evData);
+        if (shared != NULL) {
+            shared->status = SYNC_STATUS_DISCONNECTED;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Connection error");
+        }
         connection = false;
         running = false;
         break;
     case MG_EV_CLOSE:
         if (connection) {
             printf("Connection closed\n");
+            if (shared != NULL) {
+                shared->status = SYNC_STATUS_DISCONNECTED;
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Connection closed");
+            }
             connection = false;
             running = false;
         }
@@ -164,7 +236,7 @@ void connectToRoom(char roomName[], char password[], char action[]){
     mg_mgr_init(&mg);
     mg_boot_timestamp_ms = (uint64_t)time(NULL) * 1000;
     char url[512];
-    snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s", roomName, password, action);
+    snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s&max_users=2", roomName, password, action);
     c = mg_ws_connect(&mg, url, eventManager, NULL, NULL);
     if (c == NULL) {
         printf("Error 015: Connection failed\n");
