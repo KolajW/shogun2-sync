@@ -155,7 +155,7 @@ static bool registerUninstall(const char *targetDir) {
     }
 
     const char *name = "Shogun Sync";
-    const char *ver = "0.1.1-beta";
+    const char *ver = "0.1.2-beta";
     const char *publisher = "KW";
 
     char uninstallCmd[MAX_PATH + 32];
@@ -312,7 +312,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             HWND hTitle = CreateWindowExA(0, "STATIC", "Total War: Shogun 2 Synchronization Tool", WS_CHILD | WS_VISIBLE, 20, 14, 460, 22, hWnd, NULL, NULL, NULL);
             SendMessageA(hTitle, WM_SETFONT, (WPARAM)hFontBold, TRUE);
 
-            HWND hSub = CreateWindowExA(0, "STATIC", "Setup Wizard - v0.1.1-beta", WS_CHILD | WS_VISIBLE, 20, 38, 460, 18, hWnd, NULL, NULL, NULL);
+            HWND hSub = CreateWindowExA(0, "STATIC", "Setup Wizard - v0.1.2-beta", WS_CHILD | WS_VISIBLE, 20, 38, 460, 18, hWnd, NULL, NULL, NULL);
             SendMessageA(hSub, WM_SETFONT, (WPARAM)hFontSub, TRUE);
 
             CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 20, 62, 460, 2, hWnd, NULL, NULL, NULL);
@@ -507,7 +507,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     HWND hWnd = CreateWindowExA(
         WS_EX_DLGMODALFRAME,
         wc.lpszClassName,
-        "Shogun Sync Setup - v0.1.1-beta",
+        "Shogun Sync Setup - v0.1.2-beta",
         WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         x, y, w, h,
         NULL, NULL, hInstance, NULL

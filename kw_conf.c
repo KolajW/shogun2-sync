@@ -282,7 +282,24 @@ bool getActiveCampaignSave(char *saveNameOut, size_t saveNameSize, char hashOut[
     fclose(f);
 
     uint32_t result[5];
-    sha1(buff, size, result);
+    if (size >= 16) {
+        uint32_t magic = 0;
+        memcpy(&magic, buff, 4);
+        if (magic == 0x0000abca) {
+            uint32_t sz = 0;
+            memcpy(&sz, buff + 12, 4);
+            if (sz > 16 && sz <= size) {
+                sha1(buff + 16, sz - 16, result);
+            } else {
+                memset(buff + 8, 0, 4);
+                sha1(buff, size, result);
+            }
+        } else {
+            sha1(buff, size, result);
+        }
+    } else {
+        sha1(buff, size, result);
+    }
     free(buff);
 
     resultToChar(result, hashOut, 41);
@@ -293,9 +310,23 @@ bool add(char hashTree[41]){
     char activeName[MAX_PATH] = "";
     if (getActiveCampaignSave(activeName, sizeof(activeName), hashTree) == 0) {
         strcpy(latestTree, hashTree);
+        strcpy(latestActiveHash, hashTree);
+        strcpy(g_previousSaveHash, hashTree);
         if (shared != NULL) {
             strncpy(shared->lastSaveName, activeName, sizeof(shared->lastSaveName) - 1);
             shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+        }
+        if (tour == 0) {
+            const char *lastUnderscore = strrchr(activeName, '_');
+            if (lastUnderscore != NULL) {
+                int parsed = atoi(lastUnderscore + 1);
+                if (parsed > 0) {
+                    tour = parsed;
+                    if (shared != NULL) {
+                        shared->tour = tour;
+                    }
+                }
+            }
         }
 
         char fullSavePath[512];
@@ -488,6 +519,30 @@ bool watch(){
 
     initIPC();
 
+    char initActiveName[MAX_PATH] = "";
+    char initActiveHash[41] = {0};
+    if (getActiveCampaignSave(initActiveName, sizeof(initActiveName), initActiveHash) == 0) {
+        strcpy(latestTree, initActiveHash);
+        strcpy(latestActiveHash, initActiveHash);
+        strcpy(g_previousSaveHash, initActiveHash);
+        if (shared != NULL) {
+            strncpy(shared->lastSaveName, initActiveName, sizeof(shared->lastSaveName) - 1);
+            shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+        }
+        if (tour == 0) {
+            const char *lastUnderscore = strrchr(initActiveName, '_');
+            if (lastUnderscore != NULL) {
+                int parsed = atoi(lastUnderscore + 1);
+                if (parsed > 0) {
+                    tour = parsed;
+                    if (shared != NULL) {
+                        shared->tour = tour;
+                    }
+                }
+            }
+        }
+    }
+
     while (running)
     {
         if (connection)
@@ -508,6 +563,22 @@ bool watch(){
 
         if (shared != NULL) {
             shared->lastHeartbeatTick = now;
+        }
+
+        if (shared != NULL && shared->triggerReload) {
+            shared->triggerReload = false;
+            const char *tgt = (shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+            if (!isHost) {
+                printf("Manual resync requested (F9)...\n");
+                shared->status = SYNC_STATUS_RESYNCING;
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Syncing save from host...");
+                char req[128];
+                snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
+                sendPackage(req, strlen(req));
+            } else {
+                sendSaveToClient(tgt);
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+            }
         }
 
         DWORD status = WaitForSingleObject(hd, 0);
@@ -557,15 +628,13 @@ bool watch(){
                 sendPackage(msg, strlen(msg));
             }
             else {
-                if (lastHostTour > tour) {
+                if (lastHostTour >= 0) {
                     tour = lastHostTour;
-                } else {
-                    tour++;
                 }
                 if (shared != NULL) {
                     shared->tour = tour;
                 }
-                if (lastHostTour == tour) {
+                if (lastHostTour >= 0 && lastHostTour == tour && lastHostHash[0] != '\0') {
                     int diff = strcmp(latestActiveHash, lastHostHash);
                     if (diff == 0) {
                         printf("Saves are sync\n");

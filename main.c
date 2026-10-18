@@ -2,7 +2,7 @@
 #include "kw_gui.h"
 #include "kw_update.h"
 #include <time.h>
-#define VERSION "0.1.1-beta"
+#define VERSION "0.1.2-beta"
 #define AUTHOR "KW"
 
 void generateRoomCode(char *code, size_t len) {
@@ -47,7 +47,7 @@ int main(int argc, char *argv[]){
         printf("  --watch, -w                Watch save directory for changes\n");
         printf("  --scan, -s                 Scan and count save files\n");
         printf("  inject [dll_path]          Inject overlay DLL into running Shogun 2 process\n");
-        printf("  reload [save_name]         Trigger in-game save reload via overlay\n");
+        printf("  reload [save_name]         Sync authoritative save to disk via overlay\n");
         printf("  update, -u                 Check and install updates\n");
         printf("  uninstall                  Uninstall Shogun-Sync from system\n");
         printf("  --version, -v              Display version information\n");
@@ -186,8 +186,8 @@ int main(int argc, char *argv[]){
         strncpy(shared->lastSaveName, sName, sizeof(shared->lastSaveName) - 1);
         shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
         shared->triggerReload = true;
-        snprintf(shared->status_msg, sizeof(shared->status_msg), "Manual reload requested: %s", sName);
-        printf("Success: Save reload signal dispatched to in-game overlay (%s)\n", sName);
+        snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+        printf("Success: Save sync signal dispatched to in-game overlay (%s)\n", sName);
         return 0;
     }
 

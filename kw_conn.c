@@ -80,6 +80,9 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
             shared->status = SYNC_STATUS_OK;
             snprintf(shared->status_msg, sizeof(shared->status_msg), "Connected with lobby");
         }
+        if (!isHost) {
+            sendPackage("REQ_STATUS", 10);
+        }
         break;
     case MG_EV_WS_MSG: {
         struct mg_ws_message *wm = (struct mg_ws_message *) evData;
@@ -117,10 +120,10 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 if (shared != NULL) {
                     shared->status = SYNC_STATUS_OK;
                     shared->tour = tour;
-                    shared->triggerReload = true;
+                    shared->triggerReload = false;
                     strncpy(shared->lastSaveName, saveName, sizeof(shared->lastSaveName) - 1);
                     shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
-                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Save injected - reloading...");
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
                 }
             } else {
                 printf("Error 019: Resync restore failed\n");
@@ -137,7 +140,15 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
             memcpy(msg, wm->data.buf, wm->data.len);
             msg[textLen-1] = '\0';
 
-            if (strncmp(msg, "REQ_SAVE|", 9) == 0) {
+            if (strncmp(msg, "REQ_STATUS", 10) == 0) {
+                if (isHost) {
+                    char statusPkg[256];
+                    const char *sName = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+                    snprintf(statusPkg, sizeof(statusPkg), "%s|%i|%s", latestTree, tour, sName);
+                    sendPackage(statusPkg, strlen(statusPkg));
+                }
+            }
+            else if (strncmp(msg, "REQ_SAVE|", 9) == 0) {
                 char *requestedFile = msg + 9;
                 printf("Resync requested for: %s\n", requestedFile);
                 sendSaveToClient(requestedFile);
@@ -161,32 +172,35 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 }
 
                 if (!isHost) {
-                    if (receivedTour == tour) {
-                        int diff = strcmp(latestActiveHash, receivedHash);
-                        if (diff == 0) {
-                            printf("Saves are sync\n");
-                            if (shared != NULL) {
-                                shared->status = SYNC_STATUS_OK;
-                                snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
-                            }
-                        }
-                        else {
-                            printf("Saves are desync\n");
-                            if (shared != NULL) {
-                                shared->status = SYNC_STATUS_DESYNC;
-                                snprintf(shared->status_msg, sizeof(shared->status_msg), "Desync detected! Resyncing...");
-                            }
-                            printf("Resync: Requesting save from host...\n");
-                            char req[128];
-                            const char *tgt = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
-                            snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
-                            sendPackage(req, strlen(req));
-                        }
-                    } else if (receivedTour > tour) {
+                    tour = receivedTour;
+                    if (shared != NULL) {
+                        shared->tour = tour;
+                    }
+                    char freshActiveName[MAX_PATH] = "";
+                    getActiveCampaignSave(freshActiveName, sizeof(freshActiveName), latestActiveHash);
+                    if (freshActiveName[0] != '\0' && shared != NULL) {
+                        strncpy(shared->lastSaveName, freshActiveName, sizeof(shared->lastSaveName) - 1);
+                        shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+                    }
+                    int diff = strcmp(latestActiveHash, receivedHash);
+                    if (diff == 0) {
+                        printf("Saves are sync\n");
                         if (shared != NULL) {
                             shared->status = SYNC_STATUS_OK;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Host at Tour %d - waiting for turn...", receivedTour);
+                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
                         }
+                    }
+                    else {
+                        printf("Saves are desync\n");
+                        if (shared != NULL) {
+                            shared->status = SYNC_STATUS_DESYNC;
+                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Desync detected! Resyncing...");
+                        }
+                        printf("Resync: Requesting save from host...\n");
+                        char req[128];
+                        const char *tgt = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+                        snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
+                        sendPackage(req, strlen(req));
                     }
                 }
             }
@@ -199,6 +213,12 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                             shared->lobbyUsers = users;
                             shared->lobbyMaxUsers = max_u;
                             snprintf(shared->status_msg, sizeof(shared->status_msg), "Lobby: %u/%u connected", users, max_u);
+                        }
+                        if (isHost && users >= 2) {
+                            char statusPkg[256];
+                            const char *sName = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+                            snprintf(statusPkg, sizeof(statusPkg), "%s|%i|%s", latestTree, tour, sName);
+                            sendPackage(statusPkg, strlen(statusPkg));
                         }
                     }
                 }

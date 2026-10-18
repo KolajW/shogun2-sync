@@ -389,7 +389,7 @@ int launchGUI(void){
                         ImGui::Text("Message: %s", shared->status_msg);
                     }
                     if (shared->reloadCount > 0) {
-                        ImGui::Text("In-Game Reloads: %u", shared->reloadCount);
+                        ImGui::Text("Save Sync Dispatches: %u", shared->reloadCount);
                     }
                 } else {
                     ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Session inactive");
@@ -432,7 +432,7 @@ int launchGUI(void){
                 }
 
                 ImGui::Spacing();
-                if (ImGui::Button("Trigger In-Game Save Reload (F9)", ImVec2(220, 28))) {
+                if (ImGui::Button("Sync Save to Disk (F9)", ImVec2(220, 28))) {
                     if (shared == NULL) {
                         initIPC();
                     }
@@ -440,7 +440,8 @@ int launchGUI(void){
                         shared->triggerReload = true;
                         strncpy(shared->lastSaveName, "autosave.save_multiplayer", sizeof(shared->lastSaveName) - 1);
                         shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
-                        GuiLog("Save reload triggered via IPC");
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+                        GuiLog("Save synced to disk. Rehost/load in lobby to apply.");
                     } else {
                         GuiLog("Error 022: IPC shared memory not available");
                     }

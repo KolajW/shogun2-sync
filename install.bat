@@ -35,7 +35,6 @@ if exist "%~dp0libwinpthread-1.dll" (
 if exist "%~dp0ShogunSync.cer" (
     copy /Y "%~dp0ShogunSync.cer" "%INSTALL_DIR%\ShogunSync.cer" >nul
     certutil -addstore -user -f "TrustedPublisher" "%INSTALL_DIR%\ShogunSync.cer" >nul
-    certutil -addstore -user "Root" "%INSTALL_DIR%\ShogunSync.cer"
 )
 
 if errorlevel 1 (

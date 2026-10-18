@@ -10,7 +10,7 @@
 [![Language](https://img.shields.io/badge/Language-C99%20%2F%20C%2B%2B17-00599C.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%2F_11-blue.svg)](https://www.microsoft.com/windows)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-green.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Release](https://img.shields.io/badge/Release-v0.1.1--beta-brightgreen.svg)]()
+[![Release](https://img.shields.io/badge/Release-v0.1.2--beta-brightgreen.svg)]()
 [![Website](https://img.shields.io/badge/Website-shogun2--sync.com-orange.svg)](https://shogun2-sync.com)
 
 </div>
@@ -23,36 +23,34 @@
 
 ## Overview
 
-**Shogun-Sync** is an independent, community-developed tool created to resolve multiplayer campaign desynchronization (desync) issues in *Total War: Shogun 2*.
+**Shogun-Sync** is an open-source tool created to fix multiplayer campaign desyncs in *Total War: Shogun 2*.
 
-During long co-op or head-to-head campaigns, simulation divergence can cause host and client save files to drift out of sync. When this occurs, turns fail to load or the match breaks entirely, traditionally forcing players to exit the session, find files on disk, and manually copy `.save_multiplayer` archives.
+During co-op or head-to-head campaigns, small simulation differences can cause host and guest saves to fall out of sync. When this happens, turns won't progress or players get stuck. Normally, players have to exit the game, locate save files in AppData, and manually copy `.save_multiplayer` files over Discord or USB.
 
-**Shogun-Sync automates the entire recovery process:**
-1. **Real-time Filesystem Watcher**: Monitors the multiplayer campaign save directory via native Win32 kernel notifications (`FindFirstChangeNotificationA`).
-2. **Cryptographic Consistency Check**: Generates RFC-compliant SHA-1 digests of the active campaign save file at the end of each turn.
-3. **Encrypted Relay Communication**: Compares turn checksums with peer players through an external, standalone WebSocket relay broker.
-4. **Auto-Resync**: When a desynchronization is detected, the host automatically streams the authoritative, compressed save file to the desynced client over the WebSocket channel.
-5. **In-Game Save Reload Injection**: The client restores the save file on disk and dispatches an input signal to the game process, prompting the engine to execute an immediate quickload without restarting the match.
-6. **DirectX HUD Overlay**: An in-game overlay displays live campaign synchronization metrics, room code, and turn count directly on screen.
+**Shogun-Sync handles this automatically:**
+1. **Save monitoring**: Detects when Shogun 2 updates campaign saves at the end of each turn.
+2. **Hash comparison**: Compares save checksums between players through a lightweight relay server.
+3. **Save transfer**: If a desync is detected, the host automatically sends the authoritative save to the guest over WebSocket.
+4. **Save written to disk**: The client writes the synchronized save into `save_games_multiplayer`. Because Shogun 2 multiplayer cannot reload saves mid-match, players simply return to the lobby and rehost or load with the updated save file — no manual file copying required.
+5. **In-game overlay**: Displays turn count, room code, and sync status directly on screen.
 
 ---
 
 ## Project Components & Binaries
 
-The application is structured into four native Windows binaries:
-
 | Binary | Description |
 | :--- | :--- |
-| **`ShogunSyncSetup.exe`** | Dedicated Win32 graphical installation wizard with embedded binary resources (`RCDATA`). |
-| **`ShogunSync.exe`** | Windowless graphical launcher executing the GUI without flashing a console terminal. |
-| **`shogun-sync.exe`** | Core C99 CLI daemon, filesystem watcher, CAS storage engine, and embedded Dear ImGui GUI. |
-| **`shogun_overlay32.dll`** | 32-bit (x86) in-game HUD overlay detouring Direct3D 9 and Direct3D 11 presentation calls. |
+| **`ShogunSync-Setup.exe`** | Standard installer (recommended). Installs to `%LOCALAPPDATA%\ShogunSync`, adds Start Menu/Desktop shortcuts, sets up PATH, and imports the certificate. |
+| **`ShogunSyncSetup.exe`** | Standalone Win32 installation wizard. |
+| **`ShogunSync.exe`** | Launcher that opens the GUI without leaving a console window open. |
+| **`shogun-sync.exe`** | Core CLI tool, background watcher, and embedded GUI. |
+| **`shogun_overlay32.dll`** | 32-bit in-game HUD overlay for DirectX 9 and DirectX 11. |
 
 ---
 
 ## Graphical User Interface (GUI)
 
-The application provides a hardware-accelerated desktop interface (DirectX 11 + Dear ImGui) offering live synchronization telemetry, session management, and one-click in-game overlay injection:
+The desktop interface allows you to create or join rooms, monitor synchronization status, and inject the in-game overlay:
 
 ![Shogun-Sync Desktop Interface](docs/gui_preview.png)
 
@@ -60,33 +58,38 @@ The application provides a hardware-accelerated desktop interface (DirectX 11 + 
 
 ## In-Game Overlay & Hotkeys
 
-When the overlay DLL (`shogun_overlay32.dll`) is injected into the running game (`Shogun2.exe`), it hooks Direct3D presentation routines and intercepts window messages via a dedicated `WndProc` detour:
+When injected into `Shogun2.exe`, the overlay displays status information and provides hotkeys:
 
-* **`F10`**: Toggles the interactive Shogun-Sync HUD menu on/off. When opened, it enables mouse cursor capture to allow clicking in-menu controls.
-* **`F9`**: Triggers a manual quick save reload in game.
-* **HUD Telemetry Banner**: Displays current campaign turn, room code, role (Host/Client), and real-time synchronization state:
-  * `[ SYNC OK ]` – Both campaign saves match.
-  * `[ DESYNC DETECTED ]` – Hash divergence detected between players.
-  * `[ RESYNCING ]` – Save stream is being received and restored.
-  * `[ SAVE INJECTED ]` – Save has been written to disk and reload dispatched (displays for 6 seconds).
+* **`F10`**: Toggles the HUD menu on and off.
+* **`F9`**: Triggers a save sync to disk. On the client, requests the host's save; on the host, sends the save to connected clients.
+* **HUD Telemetry Banner**: Shows the current turn, room code, role, and sync status:
+  * `[ SYNC OK ]` – Both saves match.
+  * `[ DESYNC DETECTED ]` – Save checksums differ.
+  * `[ RESYNCING ]` – Receiving and saving the host file.
+  * `[ SAVE SYNCED ]` – Save written to disk. Rehost or load from lobby to continue.
 
 ---
 
 ## Installation
 
-### Option 1: Dedicated Installer (Recommended)
+### Option 1: Standard Installer (`ShogunSync-Setup.exe`, Recommended)
 
-1. Download `ShogunSyncSetup.exe` from [shogun2-sync.com/#downloads](https://shogun2-sync.com/#downloads) or the GitHub Releases page.
+1. Download **`ShogunSync-Setup.exe`** from [shogun2-sync.com/#downloads](https://shogun2-sync.com/#downloads) or GitHub Releases.
 2. Run the installer:
-   * Extracts `shogun-sync.exe`, `ShogunSync.exe`, and `shogun_overlay32.dll` into `%LOCALAPPDATA%\ShogunSync`.
-   * Automatically adds `%LOCALAPPDATA%\ShogunSync` to your user `PATH` environment variable.
-   * Generates desktop and Start Menu shortcuts pointing to `ShogunSync.exe`.
-   * Registers uninstallation keys in the Windows registry.
+   * Installs to `%LOCALAPPDATA%\ShogunSync` (no administrator privileges required).
+   * Automatically closes running game or sync processes before updating.
+   * Configures user `PATH` and desktop/Start Menu shortcuts.
+   * Imports the signing certificate to `TrustedPublisher` via `certutil`.
 
-### Option 2: Script-Based Install (`install.bat`)
+### Option 2: Standalone Setup Wizard (`ShogunSyncSetup.exe`)
 
-1. Extract the release `.zip` archive containing `shogun-sync.exe`, `ShogunSync.exe`, `shogun_overlay32.dll`, and `install.bat`.
-2. Double-click `install.bat` to copy the files to `%LOCALAPPDATA%\ShogunSync` and register the `PATH` variable.
+1. Download **`ShogunSyncSetup.exe`** from the website or GitHub releases.
+2. Run the wizard to extract the files and configure shortcuts.
+
+### Option 3: Portable ZIP Archive
+
+1. Download the `.zip` archive containing the binaries, scripts, and documentation.
+2. Extract to any folder, or run `install.bat` to set up `%LOCALAPPDATA%\ShogunSync` and PATH.
 
 ---
 
@@ -101,7 +104,7 @@ When the overlay DLL (`shogun_overlay32.dll`) is injected into the running game 
    * Click **Start Session**.
 3. **Tools Tab**:
    * Click **Inject In-Game Overlay** once *Total War: Shogun 2* is running.
-   * If manual reload is ever needed, click **Trigger In-Game Save Reload (F9)**.
+   * If manual sync is ever needed, click **Sync Save to Disk (F9)**.
 
 ---
 

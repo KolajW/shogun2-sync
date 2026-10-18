@@ -1,6 +1,6 @@
 1 VERSIONINFO
-FILEVERSION 0,1,1,0
-PRODUCTVERSION 0,1,1,0
+FILEVERSION 0,1,2,0
+PRODUCTVERSION 0,1,2,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS 0x40004L
@@ -13,12 +13,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "KolajW"
             VALUE "FileDescription", "Shogun-Sync DirectX In-Game Overlay"
-            VALUE "FileVersion", "0.1.1.0"
+            VALUE "FileVersion", "0.1.2.0"
             VALUE "InternalName", "shogun_overlay32"
             VALUE "LegalCopyright", "Copyright (C) 2026 KolajW. GNU GPL v2.0."
             VALUE "OriginalFilename", "shogun_overlay32.dll"
             VALUE "ProductName", "Shogun-Sync"
-            VALUE "ProductVersion", "0.1.1.0"
+            VALUE "ProductVersion", "0.1.2.0"
         END
     END
     BLOCK "VarFileInfo"

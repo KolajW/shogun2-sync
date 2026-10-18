@@ -53,31 +53,20 @@ static void CheckIPC(){
 }
 
 static void TriggerSaveReload(const char *saveName){
+    CheckIPC();
     DWORD now = GetTickCount();
     if (pShared != NULL) {
-        pShared->triggerReload = false;
-        if (now - pShared->lastReloadTick < 5000) {
+        if (now - pShared->lastReloadTick < 3000) {
             return;
         }
         pShared->lastReloadTick = now;
         pShared->reloadCount++;
-        snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Save reloaded: %s", saveName);
-    }
-
-    if (!g_hGameWnd) {
-        g_hGameWnd = GetActiveWindow();
-    }
-    if (g_hGameWnd) {
-        PostMessageA(g_hGameWnd, WM_KEYDOWN, VK_F9, 0x00430001);
-        PostMessageA(g_hGameWnd, WM_KEYUP, VK_F9, 0xC0430001);
-        PostMessageA(g_hGameWnd, WM_KEYDOWN, VK_CONTROL, 0x001D0001);
-        PostMessageA(g_hGameWnd, WM_KEYDOWN, 'L', 0x00260001);
-        PostMessageA(g_hGameWnd, WM_KEYUP, 'L', 0xC0260001);
-        PostMessageA(g_hGameWnd, WM_KEYUP, VK_CONTROL, 0xC01D0001);
+        pShared->triggerReload = true;
+        snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
     }
 
     g_dwReloadNotificationExpire = now + 6000;
-    snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Save reloaded: %s", saveName);
+    snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Save synced to disk. Rehost/load in lobby to apply.");
 }
 
 static LRESULT WINAPI Hook_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
@@ -87,7 +76,6 @@ static LRESULT WINAPI Hook_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
     }
     if (uMsg == WM_KEYDOWN && wParam == VK_F9) {
         TriggerSaveReload("autosave.save_multiplayer");
-        return 0;
     }
 
     if (g_bInteractive) {
@@ -112,8 +100,9 @@ static void RenderHUD(){
     }
 
     if (pShared->triggerReload) {
-        const char *name = (pShared->lastSaveName[0] != '\0') ? pShared->lastSaveName : "autosave.save_multiplayer";
-        TriggerSaveReload(name);
+        DWORD now = GetTickCount();
+        g_dwReloadNotificationExpire = now + 6000;
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Save synced to disk. Rehost/load in lobby to apply.");
     }
 
     ImGui::SetNextWindowPos(ImVec2(16.0f, 12.0f), ImGuiCond_Always);
@@ -187,7 +176,7 @@ static void RenderHUD(){
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.40f, 0.40f, 0.45f, 1.0f), "|");
             ImGui::SameLine();
-            ImGui::TextColored(ImVec4(0.30f, 0.80f, 0.95f, 1.0f), "Reloads: %u", pShared->reloadCount);
+            ImGui::TextColored(ImVec4(0.30f, 0.80f, 0.95f, 1.0f), "Sync Dispatches: %u", pShared->reloadCount);
         }
     } else {
         ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "Waiting for shogun-sync...");
@@ -206,17 +195,17 @@ static void RenderHUD(){
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.22f, 0.12f, 0.90f));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.20f, 0.80f, 0.40f, 0.90f));
         ImGui::Begin("ReloadBanner", NULL, flags);
-        ImGui::TextColored(ImVec4(0.30f, 0.95f, 0.45f, 1.0f), "[ SAVE INJECTED ] %s", g_szReloadNotification);
+        ImGui::TextColored(ImVec4(0.30f, 0.95f, 0.45f, 1.0f), "[ SAVE SYNCED ] %s", g_szReloadNotification);
         ImGui::End();
         ImGui::PopStyleColor(2);
     }
 
     if (g_bInteractive) {
         ImGui::SetNextWindowPos(ImVec2(16.0f, 86.0f), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(320.0f, 160.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(340.0f, 170.0f), ImGuiCond_Always);
         ImGui::Begin("Shogun-Sync Menu [F10 to Close]", &g_bInteractive, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-        if (ImGui::Button("Trigger Save Reload Now (F9)", ImVec2(290.0f, 32.0f))) {
+        if (ImGui::Button("Sync Save to Disk (F9)", ImVec2(310.0f, 32.0f))) {
             const char *name = (pShared != NULL && pShared->lastSaveName[0] != '\0') ? pShared->lastSaveName : "autosave.save_multiplayer";
             TriggerSaveReload(name);
         }
@@ -224,9 +213,10 @@ static void RenderHUD(){
         ImGui::Spacing();
         if (pShared != NULL) {
             ImGui::Text("Last Save: %s", pShared->lastSaveName[0] != '\0' ? pShared->lastSaveName : "None");
-            ImGui::Text("Reloads Count: %u", pShared->reloadCount);
+            ImGui::Text("Sync Dispatches: %u", pShared->reloadCount);
         }
-        ImGui::TextDisabled("Hotkeys: F9 = Quick Reload | F10 = Menu");
+        ImGui::TextDisabled("Hotkeys: F9 = Sync Save | F10 = Menu");
+        ImGui::TextDisabled("Rehost/load in multiplayer lobby to apply.");
 
         ImGui::End();
     }
