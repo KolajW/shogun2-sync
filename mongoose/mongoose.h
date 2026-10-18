@@ -2852,7 +2852,7 @@ void mg_http_serve_ssi(struct mg_connection *c, const char *root,
 #ifndef MG_TLS
 // mongoose_config.h setting. Set MG_TLS to one of the MG_TLS_* values above to
 // select a TLS backend. Defaults to MG_TLS_NONE (no TLS).
-#define MG_TLS MG_TLS_NONE
+#define MG_TLS MG_TLS_BUILTIN
 #endif
 
 

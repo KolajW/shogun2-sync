@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <stdint.h>
+
 #include "imgui/imgui.h"
 #include "imgui/backends/imgui_impl_win32.h"
 #include "imgui/backends/imgui_impl_dx9.h"
@@ -40,15 +42,214 @@ static ID3D11Device *g_pDevice11 = NULL;
 static ID3D11DeviceContext *g_pContext11 = NULL;
 static ID3D11RenderTargetView *g_pRenderTargetView11 = NULL;
 
+#define WM_SHOGUN_RELOAD (WM_USER + 0x777)
+
+struct WarscapeString {
+    uint32_t length;
+    uint32_t capacity;
+    const wchar_t *buffer;
+};
+
+static bool IsValidReadPtr(const void *ptr, size_t size) {
+    if (!ptr) return false;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    uintptr_t end = (uintptr_t)ptr + size;
+    uintptr_t pageEnd = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+    if (end > pageEnd) {
+        if (VirtualQuery((LPCVOID)pageEnd, &mbi, sizeof(mbi)) == 0) return false;
+        if (mbi.State != MEM_COMMIT) return false;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    }
+    return true;
+}
+
+typedef void (__attribute__((thiscall)) *QueueCampaignLoad_t)(void *pCampMgr, void *pPathObj, unsigned int flags);
+typedef void* (__cdecl *LoadPlayersSetup_t)(void *arg1, void *arg2);
+typedef void (__cdecl *QuickLoad_t)(void);
+
+static LoadPlayersSetup_t oLoadPlayersSetup = NULL;
+static QuickLoad_t oQuickLoad = NULL;
+static uint8_t g_savedGuestCamera[16] = {0};
+static bool g_hasSavedGuestCamera = false;
+static bool g_bPendingReloadInvocation = false;
+
+static void TriggerSaveReload(const char *saveName);
+
+static void __cdecl Hook_QuickLoad(void) {
+    if (pShared != NULL && pShared->room_code[0] != '\0') {
+        TriggerSaveReload("autosave.save_multiplayer");
+        return;
+    }
+    HMODULE hEngine = GetModuleHandleA("empire.retail.dll");
+    if (hEngine) {
+        uintptr_t baseAddr = (uintptr_t)hEngine;
+        uintptr_t pAppPtr = baseAddr + 0x01BC8FE0;
+        if (IsValidReadPtr((const void*)pAppPtr, sizeof(void*))) {
+            uintptr_t pApp = *(uintptr_t*)pAppPtr;
+            if (pApp && IsValidReadPtr((const void*)(pApp + 0x0A98), sizeof(void*))) {
+                uintptr_t pCampMgr = *(uintptr_t*)(pApp + 0x0A98);
+                if (pCampMgr && IsValidReadPtr((const void*)(pCampMgr + 0x74), sizeof(void*))) {
+                    void *pSession = *(void**)(pCampMgr + 0x74);
+                    if (pSession != NULL) {
+                        TriggerSaveReload("autosave.save_multiplayer");
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    if (oQuickLoad) {
+        oQuickLoad();
+    }
+}
+
+static void* __cdecl Hook_LoadPlayersSetup(void *arg1, void *arg2) {
+    void *retVal = oLoadPlayersSetup ? oLoadPlayersSetup(arg1, arg2) : NULL;
+    void *candidates[2] = { arg1, arg2 };
+    for (int i = 0; i < 2; i++) {
+        uint8_t *vec = (uint8_t*)candidates[i];
+        if (!IsValidReadPtr(vec, 12)) continue;
+        uint32_t capacity = *(uint32_t*)vec;
+        uint32_t count = *(uint32_t*)(vec + 4);
+        uint8_t *data = *(uint8_t**)(vec + 8);
+        if (count >= 2 && count <= 32 && capacity >= count && data != NULL) {
+            size_t reqBytes = (size_t)count * 0xb8;
+            if (IsValidReadPtr(data, reqBytes)) {
+                DWORD oldProtect = 0;
+                if (VirtualProtect(data, reqBytes, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                    uint8_t *p0 = data;
+                    uint8_t *p1 = data + 0xb8;
+                    bool isLocalHost = (pShared != NULL && pShared->isHost);
+                    if (isLocalHost) {
+                        p0[0xa1] = 1;
+                        p1[0xa1] = 0;
+                    } else {
+                        p0[0xa1] = 0;
+                        p1[0xa1] = 1;
+                        float *p1Cam = (float*)(p1 + 0xa4);
+                        if (p1Cam[0] != 0.0f || p1Cam[1] != 0.0f || p1Cam[2] != 0.0f) {
+                            memcpy(g_savedGuestCamera, p1 + 0xa4, 16);
+                            g_hasSavedGuestCamera = true;
+                            memcpy(p0 + 0xa4, p1 + 0xa4, 16);
+                        } else if (g_hasSavedGuestCamera) {
+                            memcpy(p0 + 0xa4, g_savedGuestCamera, 16);
+                            memcpy(p1 + 0xa4, g_savedGuestCamera, 16);
+                        } else {
+                            float dateCam[4] = { 240.0f, 180.0f, 400.0f, 0.0f };
+                            memcpy(g_savedGuestCamera, dateCam, 16);
+                            g_hasSavedGuestCamera = true;
+                            memcpy(p0 + 0xa4, dateCam, 16);
+                            memcpy(p1 + 0xa4, dateCam, 16);
+                        }
+                    }
+                    if (oldProtect != 0) {
+                        VirtualProtect(data, reqBytes, oldProtect, &oldProtect);
+                    }
+                }
+            }
+        }
+    }
+    return retVal;
+}
+
+static bool ExecuteEngineQueueLoad(const char *saveName) {
+    const char *sName = (saveName != NULL && saveName[0] != '\0') ? saveName : "autosave.save_multiplayer";
+    bool isMultiplayer = (pShared != NULL && pShared->room_code[0] != '\0') || (strstr(sName, "multiplayer") != NULL);
+
+    HMODULE hEngine = GetModuleHandleA("empire.retail.dll");
+    if (!hEngine) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "empire.retail.dll not found in process");
+        g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        return false;
+    }
+
+    uintptr_t baseAddr = (uintptr_t)hEngine;
+    uintptr_t pAppPtr = baseAddr + 0x01BC8FE0;
+    if (!IsValidReadPtr((const void*)pAppPtr, sizeof(void*))) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Application singleton pointer unreadable");
+        g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        return false;
+    }
+
+    uintptr_t pApp = *(uintptr_t*)pAppPtr;
+    if (!pApp || !IsValidReadPtr((const void*)pApp, 0x0A9C)) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Application singleton not initialized");
+        g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        return false;
+    }
+
+    uintptr_t pCampMgr = *(uintptr_t*)(pApp + 0x0A98);
+    if (!pCampMgr || !IsValidReadPtr((const void*)pCampMgr, 0x100)) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Campaign not active (pCampMgr is null)");
+        g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        return false;
+    }
+
+    void *pSession = *(void**)(pCampMgr + 0x74);
+    if (pSession != NULL) {
+        isMultiplayer = true;
+    }
+
+    if (isMultiplayer) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "[ SAVE SYNCED ] Save synced across peers. Load in lobby to continue.");
+        g_dwReloadNotificationExpire = GetTickCount() + 8000;
+        if (pShared != NULL) {
+            snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+            pShared->status = SYNC_STATUS_OK;
+        }
+        return true;
+    }
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect((LPVOID)pCampMgr, 0x100, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Failed to unprotect campaign manager memory");
+        g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        return false;
+    }
+
+    QueueCampaignLoad_t fnQueueLoad = (QueueCampaignLoad_t)(baseAddr + 0x006CBA70);
+
+    wchar_t wSaveName[128];
+    MultiByteToWideChar(CP_UTF8, 0, sName, -1, wSaveName, 128);
+
+    WarscapeString strObj;
+    strObj.length = (uint32_t)wcslen(wSaveName);
+    strObj.capacity = strObj.length;
+    strObj.buffer = wSaveName;
+
+    fnQueueLoad((void*)pCampMgr, &strObj, 0);
+
+    if (oldProtect != 0) {
+        VirtualProtect((LPVOID)pCampMgr, 0x100, oldProtect, &oldProtect);
+    }
+
+    snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Campaign reload queued in Warscape Engine!");
+    g_dwReloadNotificationExpire = GetTickCount() + 6000;
+    if (pShared != NULL) {
+        snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Save reloaded in Warscape Engine.");
+    }
+    return true;
+}
+
 static void CheckIPC(){
     if (pShared != NULL) {
         return;
     }
     if (hIPC == NULL) {
         hIPC = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "Local\\ShogunSyncIPC");
+        if (hIPC == NULL) {
+            hIPC = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(ShogunSharedData), "Local\\ShogunSyncIPC");
+        }
     }
-    if (hIPC != NULL) {
+    if (hIPC != NULL && pShared == NULL) {
         pShared = (ShogunSharedData *)MapViewOfFile(hIPC, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(ShogunSharedData));
+        if (pShared == NULL) {
+            CloseHandle(hIPC);
+            hIPC = NULL;
+        }
     }
 }
 
@@ -61,21 +262,66 @@ static void TriggerSaveReload(const char *saveName){
         }
         pShared->lastReloadTick = now;
         pShared->reloadCount++;
-        pShared->triggerReload = true;
-        snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+        if (saveName != NULL && saveName[0] != '\0') {
+            strncpy(pShared->lastSaveName, saveName, sizeof(pShared->lastSaveName) - 1);
+            pShared->lastSaveName[sizeof(pShared->lastSaveName) - 1] = '\0';
+        }
+        if (pShared->room_code[0] != '\0') {
+            pShared->reqSync = true;
+            snprintf(pShared->status_msg, sizeof(pShared->status_msg), "Sync requested across multiplayer peers.");
+            snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Sync requested across multiplayer peers.");
+            g_dwReloadNotificationExpire = GetTickCount() + 6000;
+        } else {
+            g_bPendingReloadInvocation = true;
+        }
+    } else {
+        g_bPendingReloadInvocation = true;
     }
+}
 
-    g_dwReloadNotificationExpire = now + 6000;
-    snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Save synced to disk. Rehost/load in lobby to apply.");
+static void ProcessPendingReload(){
+    CheckIPC();
+    if (g_bPendingReloadInvocation || (pShared != NULL && pShared->triggerReload)) {
+        g_bPendingReloadInvocation = false;
+        const char *sName = (pShared != NULL && pShared->room_code[0] != '\0') ? "autosave.save_multiplayer" : "auto_save.save";
+        if (pShared != NULL) {
+            pShared->triggerReload = false;
+            if (pShared->lastSaveName[0] != '\0') {
+                sName = pShared->lastSaveName;
+            }
+        }
+        if (g_hGameWnd) {
+            PostMessageA(g_hGameWnd, WM_SHOGUN_RELOAD, 0, 0);
+        } else {
+            ExecuteEngineQueueLoad(sName);
+        }
+    }
 }
 
 static LRESULT WINAPI Hook_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam){
-    if (uMsg == WM_KEYDOWN && wParam == VK_F10) {
-        g_bInteractive = !g_bInteractive;
+    if (uMsg == WM_SHOGUN_RELOAD) {
+        const char *sName = (pShared != NULL && pShared->room_code[0] != '\0') ? "autosave.save_multiplayer" : "auto_save.save";
+        if (pShared != NULL && pShared->lastSaveName[0] != '\0') {
+            sName = pShared->lastSaveName;
+        }
+        ExecuteEngineQueueLoad(sName);
         return 0;
     }
-    if (uMsg == WM_KEYDOWN && wParam == VK_F9) {
-        TriggerSaveReload("autosave.save_multiplayer");
+    if (wParam == VK_F10) {
+        if (uMsg == WM_KEYDOWN) {
+            g_bInteractive = !g_bInteractive;
+        }
+        return 0;
+    }
+    if (wParam == VK_F9) {
+        if (uMsg == WM_KEYDOWN) {
+            if (pShared != NULL && pShared->room_code[0] != '\0') {
+                TriggerSaveReload("autosave.save_multiplayer");
+            } else {
+                TriggerSaveReload("auto_save.save");
+            }
+        }
+        return 0;
     }
 
     if (g_bInteractive) {
@@ -95,15 +341,7 @@ static void RenderHUD(){
     CheckIPC();
 
     DWORD now = GetTickCount();
-    if (pShared == NULL || pShared->shouldExit || (now - pShared->lastHeartbeatTick > 2500)) {
-        return;
-    }
-
-    if (pShared->triggerReload) {
-        DWORD now = GetTickCount();
-        g_dwReloadNotificationExpire = now + 6000;
-        snprintf(g_szReloadNotification, sizeof(g_szReloadNotification), "Save synced to disk. Rehost/load in lobby to apply.");
-    }
+    bool bActive = (pShared != NULL && !pShared->shouldExit && (now - pShared->lastHeartbeatTick <= 2500));
 
     ImGui::SetNextWindowPos(ImVec2(16.0f, 12.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.85f);
@@ -130,7 +368,7 @@ static void RenderHUD(){
     ImGui::TextColored(ImVec4(0.40f, 0.40f, 0.45f, 1.0f), "|");
     ImGui::SameLine();
 
-    if (pShared != NULL) {
+    if (bActive) {
         ImGui::Text("Tour: %u", pShared->tour);
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.40f, 0.40f, 0.45f, 1.0f), "|");
@@ -179,7 +417,7 @@ static void RenderHUD(){
             ImGui::TextColored(ImVec4(0.30f, 0.80f, 0.95f, 1.0f), "Sync Dispatches: %u", pShared->reloadCount);
         }
     } else {
-        ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.65f, 1.0f), "Waiting for shogun-sync...");
+        ImGui::TextColored(ImVec4(0.70f, 0.70f, 0.70f, 1.0f), "[ Standby / Waiting for App ]");
     }
 
     ImGui::SameLine();
@@ -195,7 +433,7 @@ static void RenderHUD(){
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.22f, 0.12f, 0.90f));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.20f, 0.80f, 0.40f, 0.90f));
         ImGui::Begin("ReloadBanner", NULL, flags);
-        ImGui::TextColored(ImVec4(0.30f, 0.95f, 0.45f, 1.0f), "[ SAVE SYNCED ] %s", g_szReloadNotification);
+        ImGui::TextColored(ImVec4(0.30f, 0.95f, 0.45f, 1.0f), "[ NOTIFICATION ] %s", g_szReloadNotification);
         ImGui::End();
         ImGui::PopStyleColor(2);
     }
@@ -211,12 +449,14 @@ static void RenderHUD(){
         }
 
         ImGui::Spacing();
-        if (pShared != NULL) {
+        if (bActive) {
             ImGui::Text("Last Save: %s", pShared->lastSaveName[0] != '\0' ? pShared->lastSaveName : "None");
             ImGui::Text("Sync Dispatches: %u", pShared->reloadCount);
+        } else {
+            ImGui::TextDisabled("Status: Standby (App not connected)");
         }
         ImGui::TextDisabled("Hotkeys: F9 = Sync Save | F10 = Menu");
-        ImGui::TextDisabled("Rehost/load in multiplayer lobby to apply.");
+        ImGui::TextDisabled("In-game multiplayer hot-reload active.");
 
         ImGui::End();
     }
@@ -247,6 +487,12 @@ static HRESULT WINAPI Hook_Present9(IDirect3DDevice9 *pDevice, const RECT *pSour
         ImGui_ImplWin32_Init(g_hGameWnd);
         ImGui_ImplDX9_Init(pDevice);
         g_bInitDX9 = true;
+    }
+
+    ProcessPendingReload();
+
+    if (pDevice->TestCooperativeLevel() != D3D_OK) {
+        return oPresent9(pDevice, pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
     }
 
     ImGui_ImplDX9_NewFrame();
@@ -280,6 +526,9 @@ static HRESULT WINAPI Hook_Present11(IDXGISwapChain *pSwapChain, UINT SyncInterv
             DXGI_SWAP_CHAIN_DESC desc;
             pSwapChain->GetDesc(&desc);
             g_hGameWnd = desc.OutputWindow;
+            if (!g_hGameWnd) {
+                g_hGameWnd = GetActiveWindow();
+            }
 
             if (g_hGameWnd && !oWndProc) {
                 oWndProc = (WNDPROC)SetWindowLongPtrA(g_hGameWnd, GWLP_WNDPROC, (LONG_PTR)Hook_WndProc);
@@ -300,6 +549,17 @@ static HRESULT WINAPI Hook_Present11(IDXGISwapChain *pSwapChain, UINT SyncInterv
             ImGui_ImplWin32_Init(g_hGameWnd);
             ImGui_ImplDX11_Init(g_pDevice11, g_pContext11);
             g_bInitDX11 = true;
+        }
+    }
+
+    ProcessPendingReload();
+
+    if (g_bInitDX11 && !g_pRenderTargetView11 && g_pDevice11) {
+        ID3D11Texture2D *pBackBuffer = NULL;
+        pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&pBackBuffer);
+        if (pBackBuffer) {
+            g_pDevice11->CreateRenderTargetView(pBackBuffer, NULL, &g_pRenderTargetView11);
+            pBackBuffer->Release();
         }
     }
 
@@ -445,7 +705,8 @@ static DWORD WINAPI InitOverlayThread(LPVOID lpParam){
 
     CheckIPC();
 
-    if (MH_Initialize() != MH_OK) {
+    MH_STATUS initStatus = MH_Initialize();
+    if (initStatus != MH_OK && initStatus != MH_ERROR_ALREADY_INITIALIZED) {
         return 1;
     }
 
@@ -459,6 +720,15 @@ static DWORD WINAPI InitOverlayThread(LPVOID lpParam){
     if (GetD3D11VTable(vtable11, sizeof(vtable11))) {
         MH_CreateHook(vtable11[8], (void*)Hook_Present11, (void**)&oPresent11);
         MH_CreateHook(vtable11[13], (void*)Hook_ResizeBuffers11, (void**)&oResizeBuffers11);
+    }
+
+    HMODULE hEngine = GetModuleHandleA("empire.retail.dll");
+    if (hEngine) {
+        uintptr_t baseAddr = (uintptr_t)hEngine;
+        void *pLoadPlayers = (void*)(baseAddr + 0x0057FE40);
+        MH_CreateHook(pLoadPlayers, (void*)Hook_LoadPlayersSetup, (void**)&oLoadPlayersSetup);
+        void *pQuickLoad = (void*)(baseAddr + 0x0117A730);
+        MH_CreateHook(pQuickLoad, (void*)Hook_QuickLoad, (void**)&oQuickLoad);
     }
 
     MH_EnableHook(MH_ALL_HOOKS);

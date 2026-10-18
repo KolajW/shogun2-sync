@@ -19,6 +19,7 @@ typedef struct {
     char room_code[8];
     bool isHost;
     bool triggerReload;
+    bool reqSync;
     char lastSaveName[64];
     uint32_t reloadCount;
     uint32_t lastReloadTick;

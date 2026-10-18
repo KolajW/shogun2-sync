@@ -565,8 +565,8 @@ bool watch(){
             shared->lastHeartbeatTick = now;
         }
 
-        if (shared != NULL && shared->triggerReload) {
-            shared->triggerReload = false;
+        if (shared != NULL && shared->reqSync) {
+            shared->reqSync = false;
             const char *tgt = (shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
             if (!isHost) {
                 printf("Manual resync requested (F9)...\n");
@@ -576,8 +576,13 @@ bool watch(){
                 snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
                 sendPackage(req, strlen(req));
             } else {
-                sendSaveToClient(tgt);
-                snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+                if (c != NULL) {
+                    sendSaveToClient(tgt);
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Authoritative save dispatched to client.");
+                } else {
+                    shared->triggerReload = true;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "In-game reload triggered.");
+                }
             }
         }
 
@@ -634,27 +639,12 @@ bool watch(){
                 if (shared != NULL) {
                     shared->tour = tour;
                 }
-                if (lastHostTour >= 0 && lastHostTour == tour && lastHostHash[0] != '\0') {
-                    int diff = strcmp(latestActiveHash, lastHostHash);
-                    if (diff == 0) {
-                        printf("Saves are sync\n");
-                        if (shared != NULL) {
-                            shared->status = SYNC_STATUS_OK;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
-                        }
+                if (lastHostTour >= 0 && lastHostTour == tour) {
+                    if (shared != NULL) {
+                        shared->status = SYNC_STATUS_OK;
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
                     }
-                    else {
-                        printf("Saves are desync\n");
-                        if (shared != NULL) {
-                            shared->status = SYNC_STATUS_DESYNC;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Desync detected! Resyncing...");
-                        }
-                        printf("Resync: Requesting save from host...\n");
-                        char req[128];
-                        const char *tgt = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
-                        snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
-                        sendPackage(req, strlen(req));
-                    }
+                    printf("Turn %d synchronized with host\n", tour);
                 } else {
                     if (shared != NULL) {
                         shared->status = SYNC_STATUS_OK;
@@ -664,7 +654,6 @@ bool watch(){
             }
         }
     }
-    closeIPC();
     FindCloseChangeNotification(hd);
     return flag;
 }
@@ -691,12 +680,13 @@ bool initIPC(){
         shogunHandle = NULL;
         return 1;
     }
+    shared->shouldExit = false;
 
     if (!alreadyExists) {
         memset(shared, 0, sizeof(ShogunSharedData));
-        shared->status = SYNC_STATUS_CONNECTING;
+        shared->status = SYNC_STATUS_DISCONNECTED;
         shared->tour = 0;
-        snprintf(shared->status_msg, sizeof(shared->status_msg), "Waiting for game...");
+        snprintf(shared->status_msg, sizeof(shared->status_msg), "Ready");
     }
     return 0;
 }

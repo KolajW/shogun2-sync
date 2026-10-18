@@ -1,5 +1,5 @@
 #define MyAppName "Shogun-Sync"
-#define MyAppVersion "0.1.2-beta"
+#define MyAppVersion "0.1.3-beta"
 #define MyAppPublisher "KolajW"
 #define MyAppURL "https://shogun2-sync.com"
 #define MyAppExeName "ShogunSync.exe"
@@ -23,7 +23,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
-CloseApplicationsFilter=shogun-sync.exe,ShogunSync.exe,Shogun2.exe
+CloseApplicationsFilter=shogun-sync.exe,ShogunSync.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -36,7 +36,7 @@ Name: "addtopath"; Description: "Add ShogunSync to user PATH environment variabl
 [Files]
 Source: "shogun-sync.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "ShogunSync.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "shogun_overlay32.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "shogun_overlay32.dll"; DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
 Source: "libwinpthread-1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "ShogunSync.cer"; DestDir: "{app}"; Flags: ignoreversion
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
@@ -53,7 +53,10 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; Value
 
 [Run]
 Filename: "certutil.exe"; Parameters: "-addstore -user -f ""TrustedPublisher"" ""{app}\ShogunSync.cer"""; Flags: runhidden
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Code]
 function NeedsAddPath(Param: string): boolean;
@@ -66,6 +69,24 @@ begin
     exit;
   end;
   Result := Pos(';' + UpperCase(Param) + ';', ';' + UpperCase(OrigPath) + ';') = 0;
+end;
+
+procedure RemovePath(Param: string);
+var
+  OrigPath, NewPath, AppPath: string;
+  P, L: Integer;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then Exit;
+  AppPath := UpperCase(Param);
+  OrigPath := ';' + OrigPath + ';';
+  P := Pos(';' + AppPath + ';', UpperCase(OrigPath));
+  if P > 0 then
+  begin
+    L := Length(AppPath) + 1;
+    Delete(OrigPath, P, L);
+    NewPath := Copy(OrigPath, 2, Length(OrigPath) - 2);
+    RegWriteStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', NewPath);
+  end;
 end;
 
 function IsAppRunning(const FileName: string): Boolean;
@@ -88,16 +109,41 @@ end;
 function PrepareSetup(var NeedsRestart: Boolean): Boolean;
 var
   Ret: Integer;
+  AppDir, TempDll: string;
 begin
   Result := True;
-  if WizardSilent then Exit;
-  while IsAppRunning('shogun-sync.exe') or IsAppRunning('ShogunSync.exe') or IsAppRunning('Shogun2.exe') do
+  Exec('taskkill.exe', '/f /im shogun-sync.exe /im ShogunSync.exe', '', SW_HIDE, ewWaitUntilTerminated, Ret);
+  Sleep(200);
+  AppDir := ExpandConstant('{localappdata}\ShogunSync');
+  if FileExists(AppDir + '\shogun_overlay32.dll') then
   begin
-    Ret := MsgBox('Total War: Shogun 2 or Shogun Sync is currently running. Please close it before continuing with the installation.', mbConfirmation, MB_OKCANCEL);
-    if Ret = IDCANCEL then
+    TempDll := AppDir + '\shogun_overlay32_' + GetDateTimeString('yyyymmddhhnnss', #0, #0) + '.old';
+    if RenameFile(AppDir + '\shogun_overlay32.dll', TempDll) then
     begin
-      Result := False;
-      Exit;
+      RestartReplace(TempDll, '');
+    end;
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Ret: Integer;
+  AppDir, TempDll: string;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    Exec('taskkill.exe', '/f /im shogun-sync.exe /im ShogunSync.exe', '', SW_HIDE, ewWaitUntilTerminated, Ret);
+    Sleep(200);
+    RemovePath(ExpandConstant('{app}'));
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ShogunSync');
+    AppDir := ExpandConstant('{app}');
+    TempDll := AppDir + '\shogun_overlay32_' + GetDateTimeString('yyyymmddhhnnss', #0, #0) + '.old';
+    if FileExists(AppDir + '\shogun_overlay32.dll') then
+    begin
+      if RenameFile(AppDir + '\shogun_overlay32.dll', TempDll) then
+      begin
+        RestartReplace(TempDll, '');
+      end;
     end;
   end;
 end;

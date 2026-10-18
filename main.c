@@ -2,7 +2,7 @@
 #include "kw_gui.h"
 #include "kw_update.h"
 #include <time.h>
-#define VERSION "0.1.2-beta"
+#define VERSION "0.1.3-beta"
 #define AUTHOR "KW"
 
 void generateRoomCode(char *code, size_t len) {
@@ -185,9 +185,13 @@ int main(int argc, char *argv[]){
         const char *sName = (argc > 2) ? argv[2] : "autosave.save_multiplayer";
         strncpy(shared->lastSaveName, sName, sizeof(shared->lastSaveName) - 1);
         shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
-        shared->triggerReload = true;
-        snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
-        printf("Success: Save sync signal dispatched to in-game overlay (%s)\n", sName);
+        if (shared->room_code[0] != '\0') {
+            shared->reqSync = true;
+        } else {
+            shared->triggerReload = true;
+        }
+        snprintf(shared->status_msg, sizeof(shared->status_msg), "Multiplayer hot-reload dispatched to engine.");
+        printf("Success: Save hot-reload signal dispatched to in-game overlay (%s)\n", sName);
         return 0;
     }
 
@@ -226,32 +230,40 @@ int main(int argc, char *argv[]){
         printf("Room code: %s\n", roomCode);
         printf("Password: %s\n", argv[2]);
 
-        mg_log_level = MG_LL_NONE;
-        mg_log_set(MG_LL_NONE);
-        connectToRoom(roomCode, argv[2], "create");
-        connection = true;
-
         initIPC();
         if (shared != NULL){
             strncpy(shared->room_code, roomCode, sizeof(shared->room_code) - 1);
             shared->room_code[sizeof(shared->room_code) - 1] = '\0';
             shared->isHost = true;
+            shared->status = SYNC_STATUS_CONNECTING;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Room created. Waiting for partner...");
         }
-        
+
+        mg_log_level = MG_LL_NONE;
+        mg_log_set(MG_LL_NONE);
+        connectToRoom(roomCode, argv[2], "create");
+        connection = true;
 
         printf("Use CTRL + C to exit\n");
         f = watch();
+        int retCode = 0;
         if(f == 0){
             if (!running) {
-                printf("Session closed\n");
+                if (shared != NULL && shared->status == SYNC_STATUS_DISCONNECTED) {
+                    retCode = 1;
+                } else {
+                    printf("Session closed\n");
+                }
             } else {
                 printf("Success\n");
             }
         }
         else{
             printf("Failed\n");
+            retCode = 1;
         }
-        return 0;
+        closeIPC();
+        return retCode;
     }
 
     if (strcmp(argv[1], "join") == 0)
@@ -267,30 +279,44 @@ int main(int argc, char *argv[]){
                 return 1;
             }
 
-            mg_log_level = MG_LL_NONE;
-            mg_log_set(MG_LL_NONE);
-            connectToRoom(argv[2], argv[3], "join");
-            connection = true;
+            char normRoom[16] = {0};
+            size_t nlen = 0;
+            for (size_t i = 0; argv[2][i] != '\0' && nlen < sizeof(normRoom) - 1; i++) {
+                char ch = argv[2][i];
+                if (ch != ' ' && ch != '\t' && ch != '\r' && ch != '\n') {
+                    if (ch >= 'a' && ch <= 'z') ch = (char)(ch - ('a' - 'A'));
+                    normRoom[nlen++] = ch;
+                }
+            }
+            normRoom[nlen] = '\0';
 
             initIPC();
             if (shared != NULL){
-                strncpy(shared->room_code, argv[2], sizeof(shared->room_code) - 1);
-                shared->room_code[sizeof(shared->room_code) - 1] = '\0';
+                shared->room_code[0] = '\0';
                 shared->isHost = false;
+                shared->status = SYNC_STATUS_CONNECTING;
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Connecting to room %s...", normRoom);
             }
+
+            mg_log_level = MG_LL_NONE;
+            mg_log_set(MG_LL_NONE);
+            connectToRoom(normRoom, argv[3], "join");
+            connection = true;
 
             printf("Use CTRL + C to exit\n");
             f = watch();
-            if(f == 0){
-                if (!running) {
+            int retCode = 0;
+            if (f != 0 || !running) {
+                if (shared != NULL && (shared->status == SYNC_STATUS_DISCONNECTED || shared->room_code[0] == '\0')) {
+                    retCode = 1;
+                } else if (!running) {
                     printf("Session closed\n");
-                } else {
-                    printf("Success\n");
                 }
+            } else {
+                printf("Success\n");
             }
-            else{
-                printf("Failed\n");
-            }
+            closeIPC();
+            return retCode;
         }
         else
         {
@@ -302,5 +328,6 @@ int main(int argc, char *argv[]){
         return 0;
     }
 
+    closeIPC();
     return 0;
 }

@@ -71,19 +71,22 @@ static DWORD WINAPI SessionWorker(LPVOID lpParam){
         snprintf(logMsg, sizeof(logMsg), "Room created. Code: %s", roomCode);
         GuiLog(logMsg);
 
+        initIPC();
+        if (shared != NULL) {
+            strncpy(shared->room_code, roomCode, sizeof(shared->room_code) - 1);
+            shared->room_code[sizeof(shared->room_code) - 1] = '\0';
+            shared->isHost = true;
+            shared->lobbyUsers = 1;
+            shared->lobbyMaxUsers = 2;
+            shared->status = SYNC_STATUS_CONNECTING;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Room created (%s). Waiting for partner...", roomCode);
+        }
+
         mg_log_level = MG_LL_NONE;
         mg_log_set(MG_LL_NONE);
         connectToRoom(roomCode, g_inputPass, (char*)"create");
         connection = true;
 
-        initIPC();
-        if (shared != NULL) {
-            strncpy(shared->room_code, roomCode, sizeof(shared->room_code) - 1);
-            shared->isHost = true;
-            shared->lobbyUsers = 1;
-            shared->lobbyMaxUsers = 2;
-            snprintf(shared->status_msg, sizeof(shared->status_msg), "Room created. Waiting for partner...");
-        }
         autoInjectShogun("shogun_overlay32.dll");
 
         watch();
@@ -96,19 +99,32 @@ static DWORD WINAPI SessionWorker(LPVOID lpParam){
             return 1;
         }
 
-        mg_log_level = MG_LL_NONE;
-        mg_log_set(MG_LL_NONE);
-        connectToRoom(g_inputRoom, g_inputPass, (char*)"join");
-        connection = true;
+        char cleanRoom[16] = {0};
+        size_t cLen = 0;
+        for (size_t i = 0; g_inputRoom[i] != '\0' && cLen < sizeof(cleanRoom) - 1; i++) {
+            if (g_inputRoom[i] != ' ' && g_inputRoom[i] != '\t' && g_inputRoom[i] != '\r' && g_inputRoom[i] != '\n') {
+                cleanRoom[cLen++] = (char)toupper((unsigned char)g_inputRoom[i]);
+            }
+        }
+        cleanRoom[cLen] = '\0';
+        strncpy(g_inputRoom, cleanRoom, sizeof(g_inputRoom) - 1);
+        g_inputRoom[sizeof(g_inputRoom) - 1] = '\0';
 
         initIPC();
         if (shared != NULL) {
-            strncpy(shared->room_code, g_inputRoom, sizeof(shared->room_code) - 1);
             shared->isHost = false;
-            shared->lobbyUsers = 1;
-            shared->lobbyMaxUsers = 2;
-            snprintf(shared->status_msg, sizeof(shared->status_msg), "Joining room...");
+            shared->lobbyUsers = 0;
+            shared->lobbyMaxUsers = 0;
+            shared->room_code[0] = '\0';
+            shared->status = SYNC_STATUS_CONNECTING;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Connecting to room %s...", cleanRoom);
         }
+
+        mg_log_level = MG_LL_NONE;
+        mg_log_set(MG_LL_NONE);
+        connectToRoom(cleanRoom, g_inputPass, (char*)"join");
+        connection = true;
+
         autoInjectShogun("shogun_overlay32.dll");
 
         watch();
@@ -118,7 +134,16 @@ static DWORD WINAPI SessionWorker(LPVOID lpParam){
         watch();
     }
 
-    connection = false;
+    disconnectFromRoom();
+    if (shared != NULL) {
+        if (shared->status != SYNC_STATUS_DISCONNECTED) {
+            shared->status = SYNC_STATUS_DISCONNECTED;
+            snprintf(shared->status_msg, sizeof(shared->status_msg), "Session stopped");
+        }
+        shared->lobbyUsers = 0;
+        shared->lobbyMaxUsers = 0;
+        shared->room_code[0] = '\0';
+    }
     GuiLog("Session stopped.");
     return 0;
 }
@@ -219,6 +244,7 @@ int launchGUI(void){
         return 1;
     }
 
+    ShowWindow(hwnd, SW_SHOWNORMAL);
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     SetForegroundWindow(hwnd);
@@ -241,9 +267,13 @@ int launchGUI(void){
     bool bRunningGUI = true;
     initIPC();
     if (shared != NULL) {
-        shared->status = SYNC_STATUS_CONNECTING;
+        shared->shouldExit = false;
+        shared->status = SYNC_STATUS_DISCONNECTED;
         shared->tour = 0;
         shared->lastHeartbeatTick = GetTickCount();
+        shared->lobbyUsers = 0;
+        shared->lobbyMaxUsers = 0;
+        shared->room_code[0] = '\0';
         snprintf(shared->status_msg, sizeof(shared->status_msg), "Ready");
     }
     autoInjectShogun("shogun_overlay32.dll");
@@ -278,7 +308,7 @@ int launchGUI(void){
 
         ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.25f, 1.0f), "SHOGUN SYNC");
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "v0.1.1-beta | Total War: Shogun 2 Synchronization Tool");
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "v0.1.3-beta | Total War: Shogun 2 Synchronization Tool");
         ImGui::Separator();
 
         if (ImGui::BeginTabBar("MainTabs")) {
@@ -295,7 +325,7 @@ int launchGUI(void){
 
                 if (g_selectedMode == 0) {
                     ImGui::InputText("Password", g_inputPass, sizeof(g_inputPass));
-                    if (g_inputRoom[0] != '\0') {
+                    if (g_inputRoom[0] != '\0' && g_hSessionThread != NULL) {
                         ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.4f, 1.0f), "Active Room Code: %s", g_inputRoom);
                     }
                 } else if (g_selectedMode == 1) {
@@ -323,6 +353,13 @@ int launchGUI(void){
                     ImGui::Spacing();
                 }
 
+                if (g_hSessionThread != NULL) {
+                    if (WaitForSingleObject(g_hSessionThread, 0) == WAIT_OBJECT_0) {
+                        CloseHandle(g_hSessionThread);
+                        g_hSessionThread = NULL;
+                    }
+                }
+
                 if (g_hSessionThread == NULL) {
                     if (!bStorageInit) {
                         if (ImGui::Button("Start Session (Initialize First)", ImVec2(230, 32))) {
@@ -343,9 +380,16 @@ int launchGUI(void){
                     if (ImGui::Button("Stop Session", ImVec2(140, 32))) {
                         running = false;
                         GuiLog("Stopping session...");
-                        WaitForSingleObject(g_hSessionThread, 1500);
+                        WaitForSingleObject(g_hSessionThread, 2000);
                         CloseHandle(g_hSessionThread);
                         g_hSessionThread = NULL;
+                        if (shared != NULL) {
+                            shared->status = SYNC_STATUS_DISCONNECTED;
+                            shared->lobbyUsers = 0;
+                            shared->lobbyMaxUsers = 0;
+                            shared->room_code[0] = '\0';
+                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Session stopped");
+                        }
                     }
                 }
 
@@ -353,8 +397,26 @@ int launchGUI(void){
                 ImGui::Separator();
                 ImGui::Text("Live Session Status:");
 
+                if (shared == NULL) {
+                    initIPC();
+                }
+
                 if (shared != NULL) {
-                    if (shared->lobbyMaxUsers > 0) {
+                    if (g_hSessionThread != NULL) {
+                        ImGui::Text("Session: ");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.4f, 1.0f), "[ ACTIVE ]");
+                        if (shared->room_code[0] != '\0') {
+                            ImGui::SameLine();
+                            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "| Room: %s (%s)", shared->room_code, shared->isHost ? "Host" : "Client");
+                        }
+                    } else {
+                        ImGui::Text("Session: ");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[ INACTIVE ]");
+                    }
+
+                    if (shared->lobbyMaxUsers > 0 && g_hSessionThread != NULL) {
                         ImGui::Text("Lobby Members: ");
                         ImGui::SameLine();
                         if (shared->lobbyUsers >= 2) {
@@ -380,19 +442,28 @@ int launchGUI(void){
                         case SYNC_STATUS_CONNECTING:
                             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "[ CONNECTING ]");
                             break;
+                        case SYNC_STATUS_DISCONNECTED:
+                            ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), "[ DISCONNECTED ]");
+                            break;
                         default:
                             ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "[ IDLE ]");
                             break;
                     }
 
                     if (shared->status_msg[0] != '\0') {
-                        ImGui::Text("Message: %s", shared->status_msg);
+                        if (shared->status == SYNC_STATUS_DISCONNECTED && (strstr(shared->status_msg, "Room does not exist") != NULL || strstr(shared->status_msg, "Pokój nie istnieje") != NULL)) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Błąd: Pokój nie istnieje / Room does not exist");
+                        } else if (shared->status == SYNC_STATUS_DISCONNECTED && (strstr(shared->status_msg, "Invalid") != NULL || strstr(shared->status_msg, "full") != NULL || strstr(shared->status_msg, "already exists") != NULL || strstr(shared->status_msg, "error") != NULL || strstr(shared->status_msg, "Error") != NULL)) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Błąd: %s", shared->status_msg);
+                        } else {
+                            ImGui::Text("Message: %s", shared->status_msg);
+                        }
                     }
                     if (shared->reloadCount > 0) {
                         ImGui::Text("Save Sync Dispatches: %u", shared->reloadCount);
                     }
                 } else {
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Session inactive");
+                    ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Błąd: IPC shared memory unavailable");
                 }
 
                 ImGui::EndTabItem();
@@ -432,16 +503,20 @@ int launchGUI(void){
                 }
 
                 ImGui::Spacing();
-                if (ImGui::Button("Sync Save to Disk (F9)", ImVec2(220, 28))) {
+                if (ImGui::Button("In-Game Hot-Reload (F9)", ImVec2(220, 28))) {
                     if (shared == NULL) {
                         initIPC();
                     }
                     if (shared != NULL) {
-                        shared->triggerReload = true;
+                        if (shared->room_code[0] != '\0') {
+                            shared->reqSync = true;
+                        } else {
+                            shared->triggerReload = true;
+                        }
                         strncpy(shared->lastSaveName, "autosave.save_multiplayer", sizeof(shared->lastSaveName) - 1);
                         shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
-                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
-                        GuiLog("Save synced to disk. Rehost/load in lobby to apply.");
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "In-game multiplayer reload triggered.");
+                        GuiLog("In-game multiplayer reload triggered.");
                     } else {
                         GuiLog("Error 022: IPC shared memory not available");
                     }

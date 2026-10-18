@@ -2,8 +2,36 @@
 #include <windows.h>
 #include <wininet.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
+
+static void killRunningProcesses(void) {
+    DWORD currentPid = GetCurrentProcessId();
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (pe.th32ProcessID != currentPid) {
+                    if (_stricmp(pe.szExeFile, "shogun-sync.exe") == 0 ||
+                        _stricmp(pe.szExeFile, "ShogunSync.exe") == 0) {
+                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                        if (hProc != NULL) {
+                            TerminateProcess(hProc, 0);
+                            CloseHandle(hProc);
+                        }
+                    }
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "taskkill /f /fi \"PID ne %lu\" /im shogun-sync.exe /im ShogunSync.exe >nul 2>&1", currentPid);
+    system(cmd);
+}
 
 static bool downloadFile(const char *url, const char *destPath){
     HINTERNET hInternet = InternetOpenA("ShogunSyncUpdater", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
@@ -75,13 +103,15 @@ bool updateApplication(){
     char newExe[MAX_PATH];
     char oldExe[MAX_PATH];
     snprintf(newExe, sizeof(newExe), "%sshogun-sync.new.exe", dir);
-    snprintf(oldExe, sizeof(oldExe), "%sshogun-sync.old.exe", dir);
+    snprintf(oldExe, sizeof(oldExe), "%sshogun-sync.old_%lu.exe", dir, GetTickCount());
 
     printf("Downloading latest version...\n");
-    if (!downloadFile("https://shogun2-sync.duckdns.org/download/shogun-sync.exe", newExe)) {
-        if (!downloadFile("https://raw.githubusercontent.com/KolajW/shogun2-sync/main/shogun-sync.exe", newExe)) {
-            printf("Error 031: Update download failed\n");
-            return 1;
+    if (!downloadFile("https://shogun2-sync.com/downloads/shogun-sync.exe", newExe)) {
+        if (!downloadFile("https://shogun2-sync.duckdns.org/download/shogun-sync.exe", newExe)) {
+            if (!downloadFile("https://raw.githubusercontent.com/KolajW/shogun2-sync/main/shogun-sync.exe", newExe)) {
+                printf("Error 031: Update download failed\n");
+                return 1;
+            }
         }
     }
 
@@ -97,18 +127,40 @@ bool updateApplication(){
         printf("Error 031: Update download failed\n");
         return 1;
     }
+    MoveFileExA(oldExe, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+
+    char newGui[MAX_PATH];
+    char oldGui[MAX_PATH];
+    char guiPath[MAX_PATH];
+    snprintf(guiPath, sizeof(guiPath), "%sShogunSync.exe", dir);
+    snprintf(newGui, sizeof(newGui), "%sShogunSync.new.exe", dir);
+    snprintf(oldGui, sizeof(oldGui), "%sShogunSync.old_%lu.exe", dir, GetTickCount());
+
+    if (downloadFile("https://shogun2-sync.com/downloads/ShogunSync.exe", newGui) ||
+        downloadFile("https://shogun2-sync.duckdns.org/download/ShogunSync.exe", newGui) ||
+        downloadFile("https://raw.githubusercontent.com/KolajW/shogun2-sync/main/ShogunSync.exe", newGui)) {
+        DeleteFileA(oldGui);
+        if (MoveFileA(guiPath, oldGui)) {
+            MoveFileExA(oldGui, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+            MoveFileA(newGui, guiPath);
+        } else {
+            DeleteFileA(newGui);
+        }
+    }
 
     char newDll[MAX_PATH];
     char oldDll[MAX_PATH];
     char dllPath[MAX_PATH];
     snprintf(dllPath, sizeof(dllPath), "%sshogun_overlay32.dll", dir);
     snprintf(newDll, sizeof(newDll), "%sshogun_overlay32.new.dll", dir);
-    snprintf(oldDll, sizeof(oldDll), "%sshogun_overlay32.old.dll", dir);
+    snprintf(oldDll, sizeof(oldDll), "%sshogun_overlay32.old_%lu.dll", dir, GetTickCount());
 
-    if (downloadFile("https://shogun2-sync.duckdns.org/download/shogun_overlay32.dll", newDll) ||
+    if (downloadFile("https://shogun2-sync.com/downloads/shogun_overlay32.dll", newDll) ||
+        downloadFile("https://shogun2-sync.duckdns.org/download/shogun_overlay32.dll", newDll) ||
         downloadFile("https://raw.githubusercontent.com/KolajW/shogun2-sync/main/shogun_overlay32.dll", newDll)) {
         DeleteFileA(oldDll);
         MoveFileA(dllPath, oldDll);
+        MoveFileExA(oldDll, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
         MoveFileA(newDll, dllPath);
     }
 
@@ -116,7 +168,40 @@ bool updateApplication(){
     return 0;
 }
 
+static void cleanupDirectory(const char *dirPath, const char *currentExe) {
+    char searchPath[MAX_PATH];
+    snprintf(searchPath, sizeof(searchPath), "%s\\*", dirPath);
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind = FindFirstFileA(searchPath, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        char itemPath[MAX_PATH];
+        snprintf(itemPath, sizeof(itemPath), "%s\\%s", dirPath, fd.cFileName);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            cleanupDirectory(itemPath, currentExe);
+            RemoveDirectoryA(itemPath);
+        } else {
+            SetFileAttributesA(itemPath, FILE_ATTRIBUTE_NORMAL);
+            if (!DeleteFileA(itemPath)) {
+                char tempPath[MAX_PATH];
+                GetTempPathA(sizeof(tempPath), tempPath);
+                char tempFile[MAX_PATH];
+                snprintf(tempFile, sizeof(tempFile), "%s%s_%lu.tmp", tempPath, fd.cFileName, GetTickCount());
+                if (MoveFileA(itemPath, tempFile)) {
+                    MoveFileExA(tempFile, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+                }
+            }
+        }
+    } while (FindNextFileA(hFind, &fd));
+    FindClose(hFind);
+    RemoveDirectoryA(dirPath);
+}
+
 bool uninstallApplication(){
+    killRunningProcesses();
+    Sleep(200);
+
     char *localAppData = getenv("LOCALAPPDATA");
     if (localAppData == NULL) {
         printf("Error 032: Uninstall failed\n");
@@ -125,6 +210,10 @@ bool uninstallApplication(){
 
     char targetDir[MAX_PATH];
     snprintf(targetDir, sizeof(targetDir), "%s\\ShogunSync", localAppData);
+
+    char tempDir[MAX_PATH];
+    GetTempPathA(sizeof(tempDir), tempDir);
+    SetCurrentDirectoryA(tempDir);
 
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER, "Environment", 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS) {
@@ -168,10 +257,16 @@ bool uninstallApplication(){
     }
 
     RegDeleteKeyA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ShogunSync");
+    RegDeleteKeyA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D37F8E3C-4321-4EBA-9D9A-2A478EFD6209}_is1");
 
-    char cmdArgs[512];
-    snprintf(cmdArgs, sizeof(cmdArgs), "/c timeout /t 2 /nobreak >nul & rmdir /s /q \"%s\"", targetDir);
-    ShellExecuteA(NULL, "open", "cmd.exe", cmdArgs, NULL, SW_HIDE);
+    char currentExe[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, currentExe, sizeof(currentExe));
+
+    cleanupDirectory(targetDir, currentExe);
+
+    char cmdArgs[1024];
+    snprintf(cmdArgs, sizeof(cmdArgs), "/c cd /d \"%s\" & for /l %%%%i in (1,1,20) do if exist \"%s\" (rmdir /s /q \"%s\" >nul 2>&1 & ping 127.0.0.1 -n 2 >nul)", tempDir, targetDir, targetDir);
+    ShellExecuteA(NULL, "open", "cmd.exe", cmdArgs, tempDir, SW_HIDE);
 
     printf("Shogun-Sync uninstalled successfully\n");
     return 0;

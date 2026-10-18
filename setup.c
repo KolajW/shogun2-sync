@@ -45,6 +45,15 @@ static bool extractResource(int resId, const char *destPath) {
     if (!ptr || size == 0) return false;
 
     FILE *f = fopen(destPath, "wb");
+    if (!f) {
+        char tempOld[MAX_PATH];
+        snprintf(tempOld, sizeof(tempOld), "%s.old_%lu.tmp", destPath, GetTickCount());
+        DeleteFileA(tempOld);
+        if (MoveFileA(destPath, tempOld)) {
+            MoveFileExA(tempOld, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+            f = fopen(destPath, "wb");
+        }
+    }
     if (!f) return false;
     size_t written = fwrite(ptr, 1, size, f);
     fclose(f);
@@ -64,6 +73,15 @@ static bool copyOrExtract(int resId, const char *fileName, const char *destPath)
             snprintf(localPath, sizeof(localPath), "%s%s", exeDir, fileName);
             if (CopyFileA(localPath, destPath, FALSE)) {
                 return true;
+            }
+            char tempOld[MAX_PATH];
+            snprintf(tempOld, sizeof(tempOld), "%s.old_%lu.tmp", destPath, GetTickCount());
+            DeleteFileA(tempOld);
+            if (MoveFileA(destPath, tempOld)) {
+                MoveFileExA(tempOld, NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+                if (CopyFileA(localPath, destPath, FALSE)) {
+                    return true;
+                }
             }
         }
     }
@@ -99,24 +117,28 @@ static bool createShortcut(const char *targetPath, const char *shortcutPath, con
 static void killRunningProcesses(void) {
     DWORD currentPid = GetCurrentProcessId();
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap == INVALID_HANDLE_VALUE) return;
-    PROCESSENTRY32 pe;
-    pe.dwSize = sizeof(pe);
-    if (Process32First(hSnap, &pe)) {
-        do {
-            if (pe.th32ProcessID != currentPid) {
-                if (_stricmp(pe.szExeFile, "shogun-sync.exe") == 0 ||
-                    _stricmp(pe.szExeFile, "ShogunSync.exe") == 0) {
-                    HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-                    if (hProc != NULL) {
-                        TerminateProcess(hProc, 0);
-                        CloseHandle(hProc);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (pe.th32ProcessID != currentPid) {
+                    if (_stricmp(pe.szExeFile, "shogun-sync.exe") == 0 ||
+                        _stricmp(pe.szExeFile, "ShogunSync.exe") == 0) {
+                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                        if (hProc != NULL) {
+                            TerminateProcess(hProc, 0);
+                            CloseHandle(hProc);
+                        }
                     }
                 }
-            }
-        } while (Process32Next(hSnap, &pe));
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
     }
-    CloseHandle(hSnap);
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "taskkill /f /fi \"PID ne %lu\" /im shogun-sync.exe /im ShogunSync.exe >nul 2>&1", currentPid);
+    system(cmd);
 }
 
 static bool addPathEnvironment(const char *dir) {
@@ -155,7 +177,7 @@ static bool registerUninstall(const char *targetDir) {
     }
 
     const char *name = "Shogun Sync";
-    const char *ver = "0.1.2-beta";
+    const char *ver = "0.1.3-beta";
     const char *publisher = "KW";
 
     char uninstallCmd[MAX_PATH + 32];
@@ -176,6 +198,8 @@ static bool registerUninstall(const char *targetDir) {
     RegSetValueExA(hKey, "NoRepair", 0, REG_DWORD, (const BYTE*)&dwordOne, sizeof(DWORD));
 
     RegCloseKey(hKey);
+
+    RegDeleteKeyA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{D37F8E3C-4321-4EBA-9D9A-2A478EFD6209}_is1");
     return true;
 }
 
@@ -312,7 +336,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPara
             HWND hTitle = CreateWindowExA(0, "STATIC", "Total War: Shogun 2 Synchronization Tool", WS_CHILD | WS_VISIBLE, 20, 14, 460, 22, hWnd, NULL, NULL, NULL);
             SendMessageA(hTitle, WM_SETFONT, (WPARAM)hFontBold, TRUE);
 
-            HWND hSub = CreateWindowExA(0, "STATIC", "Setup Wizard - v0.1.2-beta", WS_CHILD | WS_VISIBLE, 20, 38, 460, 18, hWnd, NULL, NULL, NULL);
+            HWND hSub = CreateWindowExA(0, "STATIC", "Setup Wizard - v0.1.3-beta", WS_CHILD | WS_VISIBLE, 20, 38, 460, 18, hWnd, NULL, NULL, NULL);
             SendMessageA(hSub, WM_SETFONT, (WPARAM)hFontSub, TRUE);
 
             CreateWindowExA(0, "STATIC", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 20, 62, 460, 2, hWnd, NULL, NULL, NULL);
@@ -507,7 +531,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     HWND hWnd = CreateWindowExA(
         WS_EX_DLGMODALFRAME,
         wc.lpszClassName,
-        "Shogun Sync Setup - v0.1.2-beta",
+        "Shogun Sync Setup - v0.1.3-beta",
         WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         x, y, w, h,
         NULL, NULL, hInstance, NULL

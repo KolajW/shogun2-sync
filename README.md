@@ -10,7 +10,7 @@
 [![Language](https://img.shields.io/badge/Language-C99%20%2F%20C%2B%2B17-00599C.svg)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![Platform](https://img.shields.io/badge/Platform-Windows_10_%2F_11-blue.svg)](https://www.microsoft.com/windows)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-green.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Release](https://img.shields.io/badge/Release-v0.1.2--beta-brightgreen.svg)]()
+[![Release](https://img.shields.io/badge/Release-v0.1.3--beta-brightgreen.svg)]()
 [![Website](https://img.shields.io/badge/Website-shogun2--sync.com-orange.svg)](https://shogun2-sync.com)
 
 </div>

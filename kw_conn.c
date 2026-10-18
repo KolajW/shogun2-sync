@@ -6,8 +6,44 @@
 
 struct mg_connection *c = NULL;
 struct mg_mgr mg;
+static bool mg_initialized = false;
 int lastHostTour = -1;
 char lastHostHash[41] = {0};
+char currentRoomCode[16] = {0};
+
+static void patchMultiplayerSaveHeader(const char *savePath) {
+    FILE *f = fopen(savePath, "r+b");
+    if (!f) return;
+    uint8_t hdr[0x100];
+    size_t rd = fread(hdr, 1, sizeof(hdr), f);
+    if (rd >= 0x88) {
+        if (hdr[0x53] == 0x09 && hdr[0x74] == 0x09) {
+            uint8_t tmp[8];
+            memcpy(tmp, hdr + 0x54, 8);
+            memcpy(hdr + 0x54, hdr + 0x75, 8);
+            memcpy(hdr + 0x75, tmp, 8);
+            fseek(f, 0, SEEK_SET);
+            fwrite(hdr, 1, rd, f);
+        } else {
+            int p1 = -1, p2 = -1;
+            for (size_t i = 0x30; i + 12 <= rd; i++) {
+                if (hdr[i] == 0x09 && memcmp(hdr + i + 5, "\x01\x00\x10\x01", 4) == 0) {
+                    if (p1 == -1) p1 = (int)(i + 1);
+                    else if (p2 == -1) { p2 = (int)(i + 1); break; }
+                }
+            }
+            if (p1 != -1 && p2 != -1) {
+                uint8_t tmp[8];
+                memcpy(tmp, hdr + p1, 8);
+                memcpy(hdr + p1, hdr + p2, 8);
+                memcpy(hdr + p2, tmp, 8);
+                fseek(f, 0, SEEK_SET);
+                fwrite(hdr, 1, rd, f);
+            }
+        }
+    }
+    fclose(f);
+}
 
 void sendSaveToClient(const char *saveName) {
     if (c == NULL) return;
@@ -77,11 +113,16 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
     case MG_EV_WS_OPEN:
         printf("Connected with lobby\n");
         if (shared != NULL) {
-            shared->status = SYNC_STATUS_OK;
-            snprintf(shared->status_msg, sizeof(shared->status_msg), "Connected with lobby");
-        }
-        if (!isHost) {
-            sendPackage("REQ_STATUS", 10);
+            if (isHost) {
+                shared->status = SYNC_STATUS_CONNECTING;
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Room created (%s). Waiting for partner...", currentRoomCode);
+                strncpy(shared->room_code, currentRoomCode, sizeof(shared->room_code) - 1);
+                shared->room_code[sizeof(shared->room_code) - 1] = '\0';
+            } else {
+                shared->status = SYNC_STATUS_CONNECTING;
+                snprintf(shared->status_msg, sizeof(shared->status_msg), "Verifying room %s...", currentRoomCode);
+                shared->room_code[0] = '\0';
+            }
         }
         break;
     case MG_EV_WS_MSG: {
@@ -108,6 +149,7 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
             g_isRestoringSave = true;
             bool decErr = kw_decompress(compressedData, compressedLen, targetPath);
             if (decErr == 0) {
+                patchMultiplayerSaveHeader(targetPath);
                 printf("Resync: Save restored successfully\n");
                 commit("Resync commit");
                 g_lastRestoreTick = GetTickCount();
@@ -120,11 +162,13 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 if (shared != NULL) {
                     shared->status = SYNC_STATUS_OK;
                     shared->tour = tour;
-                    shared->triggerReload = false;
                     strncpy(shared->lastSaveName, saveName, sizeof(shared->lastSaveName) - 1);
                     shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
-                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Rehost/load in lobby to apply.");
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Save synced to disk. Synchronizing in-game reload...");
                 }
+                char readyPkg[128];
+                snprintf(readyPkg, sizeof(readyPkg), "RELOAD_READY|%s", saveName);
+                sendPackage(readyPkg, strlen(readyPkg));
             } else {
                 printf("Error 019: Resync restore failed\n");
                 if (shared != NULL) {
@@ -152,6 +196,31 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                 char *requestedFile = msg + 9;
                 printf("Resync requested for: %s\n", requestedFile);
                 sendSaveToClient(requestedFile);
+            }
+            else if (strncmp(msg, "RELOAD_READY|", 13) == 0) {
+                char *rSave = msg + 13;
+                if (isHost) {
+                    char execPkg[128];
+                    snprintf(execPkg, sizeof(execPkg), "EXEC_RELOAD|%s", rSave);
+                    sendPackage(execPkg, strlen(execPkg));
+                    if (shared != NULL) {
+                        strncpy(shared->lastSaveName, rSave, sizeof(shared->lastSaveName) - 1);
+                        shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+                        shared->triggerReload = true;
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized dual-reload triggered.");
+                    }
+                }
+            }
+            else if (strncmp(msg, "EXEC_RELOAD|", 12) == 0) {
+                char *rSave = msg + 12;
+                if (!isHost) {
+                    if (shared != NULL) {
+                        strncpy(shared->lastSaveName, rSave, sizeof(shared->lastSaveName) - 1);
+                        shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
+                        shared->triggerReload = true;
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized dual-reload triggered.");
+                    }
+                }
             }
             else if (textLen > 41 && msg[40] == '|') {
                 char receivedHash[41];
@@ -182,27 +251,68 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                         strncpy(shared->lastSaveName, freshActiveName, sizeof(shared->lastSaveName) - 1);
                         shared->lastSaveName[sizeof(shared->lastSaveName) - 1] = '\0';
                     }
-                    int diff = strcmp(latestActiveHash, receivedHash);
-                    if (diff == 0) {
-                        printf("Saves are sync\n");
-                        if (shared != NULL) {
-                            shared->status = SYNC_STATUS_OK;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
-                        }
+                    if (shared != NULL) {
+                        shared->status = SYNC_STATUS_OK;
+                        snprintf(shared->status_msg, sizeof(shared->status_msg), "Synchronized (Tour %d)", tour);
                     }
-                    else {
-                        printf("Saves are desync\n");
-                        if (shared != NULL) {
-                            shared->status = SYNC_STATUS_DESYNC;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Desync detected! Resyncing...");
-                        }
-                        printf("Resync: Requesting save from host...\n");
-                        char req[128];
-                        const char *tgt = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
-                        snprintf(req, sizeof(req), "REQ_SAVE|%s", tgt);
-                        sendPackage(req, strlen(req));
-                    }
+                    printf("Turn %d synchronized with host\n", tour);
                 }
+            }
+            else if (strstr(msg, "Room does not exist") != NULL || strstr(msg, "not exist") != NULL) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room does not exist");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room does not exist");
+                printf("Error: Room does not exist\n");
+                connection = false;
+                running = false;
+            }
+            else if (strstr(msg, "Invalid room password") != NULL) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Invalid room password");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Invalid room password");
+                printf("Error: Invalid room password\n");
+                connection = false;
+                running = false;
+            }
+            else if (strstr(msg, "Room is full") != NULL) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room is full");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room is full");
+                printf("Error: Room is full\n");
+                connection = false;
+                running = false;
+            }
+            else if (strstr(msg, "already exists") != NULL) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room already exists");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room already exists");
+                printf("Error: Room already exists\n");
+                connection = false;
+                running = false;
             }
             else {
                 const char *p = strstr(msg, "Players in lobby: ");
@@ -212,13 +322,35 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
                         if (shared != NULL) {
                             shared->lobbyUsers = users;
                             shared->lobbyMaxUsers = max_u;
-                            snprintf(shared->status_msg, sizeof(shared->status_msg), "Lobby: %u/%u connected", users, max_u);
+                            if (currentRoomCode[0] != '\0') {
+                                strncpy(shared->room_code, currentRoomCode, sizeof(shared->room_code) - 1);
+                                shared->room_code[sizeof(shared->room_code) - 1] = '\0';
+                            }
                         }
-                        if (isHost && users >= 2) {
-                            char statusPkg[256];
-                            const char *sName = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
-                            snprintf(statusPkg, sizeof(statusPkg), "%s|%i|%s", latestTree, tour, sName);
-                            sendPackage(statusPkg, strlen(statusPkg));
+                        if (isHost) {
+                            if (users == 1) {
+                                if (shared != NULL) {
+                                    shared->status = SYNC_STATUS_CONNECTING;
+                                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room created (%s). Waiting for partner... (1/%u)", currentRoomCode, max_u);
+                                }
+                            } else if (users >= 2) {
+                                if (shared != NULL) {
+                                    shared->status = SYNC_STATUS_OK;
+                                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Lobby: %u/%u connected (Ready)", users, max_u);
+                                }
+                                char statusPkg[256];
+                                const char *sName = (shared != NULL && shared->lastSaveName[0] != '\0') ? shared->lastSaveName : "autosave.save_multiplayer";
+                                snprintf(statusPkg, sizeof(statusPkg), "%s|%i|%s", latestTree, tour, sName);
+                                sendPackage(statusPkg, strlen(statusPkg));
+                            }
+                        } else {
+                            if (users >= 2) {
+                                if (shared != NULL) {
+                                    shared->status = SYNC_STATUS_OK;
+                                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Lobby: %u/%u connected (Ready)", users, max_u);
+                                }
+                                sendPackage("REQ_STATUS", 10);
+                            }
                         }
                     }
                 }
@@ -229,22 +361,88 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
         }
         break;
     }
+    case MG_EV_WS_CTL: {
+        struct mg_ws_message *wm = (struct mg_ws_message *) evData;
+        int msgtype = wm->flags & 0x0F;
+        if (msgtype == WEBSOCKET_OP_CLOSE) {
+            uint16_t closeCode = 0;
+            if (wm->data.len >= 2) {
+                closeCode = ((uint8_t)wm->data.buf[0] << 8) | (uint8_t)wm->data.buf[1];
+            }
+            if (closeCode == 4003) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room does not exist");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room does not exist");
+                printf("Error: Room does not exist\n");
+            } else if (closeCode == 4000) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Invalid room password");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Invalid room password");
+                printf("Error: Invalid room password\n");
+            } else if (closeCode == 4001) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room is full");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room is full");
+                printf("Error: Room is full\n");
+            } else if (closeCode == 4002) {
+                if (shared != NULL) {
+                    shared->status = SYNC_STATUS_DISCONNECTED;
+                    snprintf(shared->status_msg, sizeof(shared->status_msg), "Room already exists");
+                    shared->room_code[0] = '\0';
+                    shared->lobbyUsers = 0;
+                    shared->lobbyMaxUsers = 0;
+                }
+                currentRoomCode[0] = '\0';
+                GuiLog("Error: Room already exists");
+                printf("Error: Room already exists\n");
+            }
+            connection = false;
+            running = false;
+        }
+        break;
+    }
     case MG_EV_ERROR:
         printf("Error 015: Connection failed: %s\n", (char *) evData);
-        if (shared != NULL) {
+        if (shared != NULL && shared->status != SYNC_STATUS_DISCONNECTED) {
             shared->status = SYNC_STATUS_DISCONNECTED;
             snprintf(shared->status_msg, sizeof(shared->status_msg), "Connection error");
+            shared->room_code[0] = '\0';
+            shared->lobbyUsers = 0;
+            shared->lobbyMaxUsers = 0;
         }
+        currentRoomCode[0] = '\0';
         connection = false;
         running = false;
         break;
     case MG_EV_CLOSE:
         if (connection) {
             printf("Connection closed\n");
-            if (shared != NULL) {
+            if (shared != NULL && shared->status != SYNC_STATUS_DISCONNECTED) {
                 shared->status = SYNC_STATUS_DISCONNECTED;
                 snprintf(shared->status_msg, sizeof(shared->status_msg), "Connection closed");
+                shared->room_code[0] = '\0';
+                shared->lobbyUsers = 0;
+                shared->lobbyMaxUsers = 0;
             }
+            currentRoomCode[0] = '\0';
             connection = false;
             running = false;
         }
@@ -253,14 +451,41 @@ void eventManager(struct mg_connection *conn, int ev, void *evData){
 }
 
 void connectToRoom(char roomName[], char password[], char action[]){
+    if (mg_initialized) {
+        c = NULL;
+        mg_mgr_free(&mg);
+        mg_initialized = false;
+    }
     mg_mgr_init(&mg);
+    mg_initialized = true;
     mg_boot_timestamp_ms = (uint64_t)time(NULL) * 1000;
+    lastHostTour = -1;
+    memset(lastHostHash, 0, sizeof(lastHostHash));
+    currentRoomCode[0] = '\0';
+    size_t ri = 0;
+    for (size_t i = 0; roomName[i] != '\0' && ri < sizeof(currentRoomCode) - 1; i++) {
+        if (roomName[i] != ' ' && roomName[i] != '\t' && roomName[i] != '\r' && roomName[i] != '\n') {
+            currentRoomCode[ri++] = (char)toupper((unsigned char)roomName[i]);
+        }
+    }
+    currentRoomCode[ri] = '\0';
     char url[512];
-    snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s&max_users=2", roomName, password, action);
+    snprintf(url, sizeof(url), "wss://shogun2-sync.duckdns.org/ws/%s?password=%s&action=%s&max_users=2", currentRoomCode, password, action);
     c = mg_ws_connect(&mg, url, eventManager, NULL, NULL);
     if (c == NULL) {
         printf("Error 015: Connection failed\n");
         running = false;
+    }
+}
+
+void disconnectFromRoom(void){
+    connection = false;
+    running = false;
+    c = NULL;
+    currentRoomCode[0] = '\0';
+    if (mg_initialized) {
+        mg_mgr_free(&mg);
+        mg_initialized = false;
     }
 }
 
